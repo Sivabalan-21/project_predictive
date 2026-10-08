@@ -76,3 +76,9 @@ python -m simulation.sensor_simulator --interval 0.5 --seed 12
 Configuration (environment variables, see `.env.example`): `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_SENSOR_TOPIC`, `KAFKA_PREDICTION_TOPIC`.
 
 Tests: `python -m pytest tests -q` runs without any broker. Real-broker tests: set `RUN_KAFKA_INTEGRATION=1`, then `python -m pytest tests/test_kafka_integration.py -v`.
+
+## Phase 3: PostgreSQL + Kafka + FastAPI backend
+Production-style pipeline: sensor events -> Kafka -> consumer -> `PredictionService` -> PostgreSQL (+ `predictions`/`alerts` topics) -> FastAPI.
+Quick start: `copy .env.example .env`, `docker compose up -d`, `alembic upgrade head`, `python -m streaming.db_consumer`,
+`uvicorn api.main:create_app --factory`. Full documentation, failure semantics and limitations: [docs/architecture.md](docs/architecture.md).
+Streamlit/Flask apps and the Phase 2 consumer keep working unchanged.

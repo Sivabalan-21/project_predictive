@@ -209,3 +209,9 @@ Unit tests need no broker: `python -m pytest tests -q`. Real-broker tests (skipp
 * Machines are hashed onto 3 partitions (observed split 1/3/1 machines), so the load is uneven.
 * Simulated data only; TWF and RNF failures are mostly not detected by the model (see the table above).
 * No schema registry; the schema is enforced in code by the producer and consumer.
+
+## Phase 3: persisting consumer
+`python -m streaming.db_consumer` reads the sensor topic, stores reading + prediction + alert in PostgreSQL in one transaction, publishes to the
+predictions and alerts topics and commits each message's offset only after the DB commit. See [architecture.md](architecture.md) for the flow,
+failure table and limitations. Required env: `DATABASE_URL`, `KAFKA_*` (see `.env.example`). Exit codes: 0 ok, 2 config, 3 broker, 4 models, 5 persistence halted (offset not committed).
+`streaming/consumer.py` (no database) is unchanged.
