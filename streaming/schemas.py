@@ -21,6 +21,7 @@ from ml.preprocessing import RAW_FEATURES, SANITY_BOUNDS
 # strict=True: "300.5" (a string) or true/false are rejected instead of silently coerced.
 StrictNumber = Annotated[float, Field(strict=True, allow_inf_nan=False)]
 MACHINE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+EVENT_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
 
 
 class EventValidationError(ValueError):
@@ -60,6 +61,7 @@ class SensorEvent(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    event_id: str | None = Field(default=None, pattern=EVENT_ID_PATTERN)   # optional stable id (e.g. a UUID)
     machine_id: str = Field(pattern=MACHINE_ID_PATTERN)
     timestamp: datetime
     air_temperature: StrictNumber        # K
@@ -134,6 +136,8 @@ class PredictionEvent(BaseModel):
     isolation_prediction: int
     model_version: str
     processed_at: datetime                                # when the consumer produced this result
+    sensor_reading_id: int | None = None                  # PostgreSQL id (set by the persisting consumer)
+    event_id: str | None = None
 
     @field_validator("timestamp", "processed_at", mode="before")
     @classmethod
@@ -155,7 +159,8 @@ class PredictionEvent(BaseModel):
             raise EventValidationError(_format_errors(exc)) from exc
 
     @classmethod
-    def from_result(cls, event: SensorEvent, result: Any, processed_at: datetime) -> "PredictionEvent":
+    def from_result(cls, event: SensorEvent, result: Any, processed_at: datetime,
+                    sensor_reading_id: int | None = None) -> "PredictionEvent":
         """Build from a SensorEvent and an ml.prediction.PredictionResult (no ML logic here)."""
         return cls(
             machine_id=event.machine_id, timestamp=event.timestamp, status=result.final_status,
@@ -163,4 +168,30 @@ class PredictionEvent(BaseModel):
             fault_indicators=list(result.fault_indicators), rf_prediction=result.rf_prediction,
             xgb_prediction=result.xgb_prediction, isolation_prediction=result.isolation_prediction,
             model_version=result.model_version, processed_at=processed_at,
+            sensor_reading_id=sensor_reading_id, event_id=event.event_id,
         )
+
+
+class AlertEvent(BaseModel):
+    """Published to the alerts topic when a NEW ACTIVE alert is created. ``risk_score`` is NOT calibrated."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    alert_id: int
+    machine_id: str = Field(pattern=MACHINE_ID_PATTERN)
+    fault_type: str
+    risk_score: float = Field(ge=0.0, le=1.0)
+    status: Literal["ACTIVE", "RESOLVED"]
+    timestamp: datetime                                   # timestamp of the triggering sensor reading
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def _ts(cls, value: Any) -> datetime:
+        return _parse_timestamp(value)
+
+    @field_serializer("timestamp")
+    def _ser_ts(self, value: datetime) -> str:
+        return _iso_z(value)
+
+    def to_json_bytes(self) -> bytes:
+        return self.model_dump_json().encode("utf-8")
