@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}History · PredictMaint{% endblock %}
+{% block page_title %}Prediction History{% endblock %}
+{% block page_sub %}All predictions stored in database · Filterable · Downloadable{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);">
+  <div class="kpi-card">
+    <div class="kpi-icon blue">📋</div>
+    <div><div class="kpi-value">{{ total }}</div><div class="kpi-label">Total Records</div></div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-icon green">✅</div>
+    <div><div class="kpi-value">{{ normal }}</div><div class="kpi-label">Normal</div></div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-icon red">🚨</div>
+    <div><div class="kpi-value">{{ failures }}</div><div class="kpi-label">Failures</div></div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-icon yellow">🎯</div>
+    <div><div class="kpi-value">3</div><div class="kpi-label">Models Used</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="filter-bar">
+    <select id="statusFilter" onchange="filterTable()">
+      <option value="">All Status</option>
+      <option value="NORMAL">Normal Only</option>
+      <option value="FAILURE">Failure Only</option>
+    </select>
+    <select id="faultFilter" onchange="filterTable()">
+      <option value="">All Fault Types</option>
+      <option value="TWF">TWF</option>
+      <option value="HDF">HDF</option>
+      <option value="PWF">PWF</option>
+      <option value="OSF">OSF</option>
+      <option value="RNF">RNF</option>
+    </select>
+    <input type="text" id="searchInput" placeholder="Search..." oninput="filterTable()">
+    <button class="btn-download" onclick="downloadCSV()">⬇ Download CSV</button>
+  </div>
+
+  <div class="table-wrap">
+    <table id="historyTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Timestamp</th>
+          <th>Air Temp</th>
+          <th>Proc Temp</th>
+          <th>RPM</th>
+          <th>Torque</th>
+          <th>Tool Wear</th>
+          <th>RF</th>
+          <th>XGB</th>
+          <th>ISO</th>
+          <th>Status</th>
+          <th>Fault Type</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        {% for r in records %}
+        <tr data-status="{{ r.final_status }}" data-fault="{{ r.fault_type }}">
+          <td style="color:var(--gray-400);">{{ r.id }}</td>
+          <td>{{ r.timestamp }}</td>
+          <td>{{ r.air_temp }}</td>
+          <td>{{ r.process_temp }}</td>
+          <td>{{ r.rotational_speed }}</td>
+          <td>{{ r.torque }}</td>
+          <td>{{ r.tool_wear }}</td>
+          <td>
+            {% if r.rf_prediction == 1 %}
+            <span class="badge badge-danger">Fail</span>
+            {% else %}
+            <span class="badge badge-success">OK</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.xgb_prediction == 1 %}
+            <span class="badge badge-danger">Fail</span>
+            {% else %}
+            <span class="badge badge-success">OK</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.iso_prediction == 1 %}
+            <span class="badge badge-danger">Fail</span>
+            {% else %}
+            <span class="badge badge-success">OK</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if 'FAILURE' in r.final_status %}
+            <span class="badge badge-danger"><span class="badge-dot"></span> Failure</span>
+            {% else %}
+            <span class="badge badge-success"><span class="badge-dot"></span> Normal</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.fault_type != 'None' %}
+            <span class="badge badge-warning">{{ r.fault_type }}</span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="12" style="text-align:center;padding:40px;color:var(--gray-400);">
+            No records yet.
+            <a href="/predict" style="color:var(--primary);">Make a prediction →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterTable() {
+  const sf = document.getElementById('statusFilter').value;
+  const ff = document.getElementById('faultFilter').value;
+  const s  = document.getElementById('searchInput').value.toLowerCase();
+  document.querySelectorAll('#tableBody tr').forEach(row => {
+    const status = row.dataset.status || '';
+    const fault  = row.dataset.fault  || '';
+    const text   = row.textContent.toLowerCase();
+    const show   = (!sf || status.includes(sf)) &&
+                   (!ff || fault.includes(ff))  &&
+                   (!s  || text.includes(s));
+    row.style.display = show ? '' : 'none';
+  });
+}
+
+function downloadCSV() {
+  const rows = [['ID','Timestamp','Air Temp','Proc Temp','RPM',
+                 'Torque','Tool Wear','RF','XGB','ISO','Status','Fault']];
+  document.querySelectorAll('#tableBody tr').forEach(row => {
+    if (row.style.display !== 'none') {
+      const cells = [...row.querySelectorAll('td')].map(td => td.textContent.trim());
+      rows.push(cells);
+    }
+  });
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const a   = document.createElement('a');
+  a.href    = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'prediction_history.csv';
+  a.click();
+}
+</script>
+{% endblock %}

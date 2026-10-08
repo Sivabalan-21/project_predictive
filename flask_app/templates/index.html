@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · PredictMaint{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_sub %}Prediction history and fault analytics · AI4I 2020 dataset{% endblock %}
+
+{% block content %}
+
+<!-- KPI Row -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-icon blue">📊</div>
+    <div>
+      <div class="kpi-value">{{ total }}</div>
+      <div class="kpi-label">Total Predictions</div>
+      <div class="kpi-delta up">↑ All time</div>
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-icon green">✅</div>
+    <div>
+      <div class="kpi-value">{{ normal }}</div>
+      <div class="kpi-label">Normal Operations</div>
+      <div class="kpi-delta up">{{ "%.1f"|format(100 - rate) }}% healthy</div>
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-icon red">🚨</div>
+    <div>
+      <div class="kpi-value">{{ failures }}</div>
+      <div class="kpi-label">Failures Detected</div>
+      <div class="kpi-delta down">{{ rate }}% failure rate</div>
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-icon yellow">⚡</div>
+    <div>
+      {% if headline %}<div class="kpi-value">{{ '%.2f'|format(headline.f1) }}</div>
+      <div class="kpi-label">Test F1 · {{ headline.method }}</div>
+      <div class="kpi-delta up">95% CI {{ '%.2f'|format(headline.f1_ci[0]) }}–{{ '%.2f'|format(headline.f1_ci[1]) }}</div>{% else %}<div class="kpi-value">—</div>
+      <div class="kpi-label">Model metrics</div>
+      <div class="kpi-delta down">run python -m ml.training.train</div>{% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">Health Status Distribution</div>
+    <canvas id="donutChart" height="180"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">Sensor Trend — Air Temperature</div>
+    <canvas id="trendChart" height="180"></canvas>
+  </div>
+</div>
+
+<!-- Fault + Torque -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">Fault Type Breakdown</div>
+    <canvas id="faultChart" height="160"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">Sensor Trend — Torque (Nm)</div>
+    <canvas id="torqueChart" height="160"></canvas>
+  </div>
+</div>
+
+<!-- Recent Table -->
+<div class="card">
+  <div class="card-title">Recent Predictions</div>
+  <div class="table-wrap">
+    {% if recent %}
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Air Temp (K)</th>
+          <th>Process Temp (K)</th>
+          <th>RPM</th>
+          <th>Torque (Nm)</th>
+          <th>Tool Wear</th>
+          <th>Status</th>
+          <th>Fault Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recent %}
+        <tr>
+          <td>{{ r.timestamp }}</td>
+          <td>{{ r.air_temp }}</td>
+          <td>{{ r.process_temp }}</td>
+          <td>{{ r.rotational_speed }}</td>
+          <td>{{ r.torque }}</td>
+          <td>{{ r.tool_wear }}</td>
+          <td>
+            {% if 'FAILURE' in r.final_status %}
+            <span class="badge badge-danger"><span class="badge-dot"></span>Failure</span>
+            {% else %}
+            <span class="badge badge-success"><span class="badge-dot"></span>Normal</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.fault_type != 'None' %}
+            <span class="badge badge-warning">{{ r.fault_type }}</span>
+            {% else %} — {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:40px;color:var(--gray-400);">
+      No predictions yet. <a href="/predict" style="color:var(--primary);">Make your first prediction →</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const normal   = {{ normal }};
+const failures = {{ failures }};
+const faultCounts = {{ fault_counts | tojson }};
+const trendData   = {{ trend_data | tojson }};
+
+// Donut
+new Chart(document.getElementById('donutChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Normal', 'Failure'],
+    datasets: [{ data: [normal, failures],
+      backgroundColor: ['#16A34A','#DC2626'],
+      borderWidth: 0, hoverOffset: 6 }]
+  },
+  options: {
+    cutout: '70%', plugins: { legend: { position: 'bottom' } },
+    responsive: true, maintainAspectRatio: false
+  }
+});
+
+// Trend
+if (trendData.timestamps) {
+  new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+      labels: trendData.timestamps || [],
+      datasets: [{ label: 'Air Temp (K)', data: trendData.air_temp || [],
+        borderColor: '#2563EB', backgroundColor: 'rgba(37,99,235,.08)',
+        fill: true, tension: 0.4, pointRadius: 3 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { display: false },
+                y: { grid: { color: '#F1F5F9' }, ticks: { color: '#94A3B8' } } }
+    }
+  });
+
+  new Chart(document.getElementById('torqueChart'), {
+    type: 'line',
+    data: {
+      labels: trendData.timestamps || [],
+      datasets: [{ label: 'Torque (Nm)', data: trendData.torque || [],
+        borderColor: '#D97706', backgroundColor: 'rgba(217,119,6,.08)',
+        fill: true, tension: 0.4, pointRadius: 3 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { display: false },
+                y: { grid: { color: '#F1F5F9' }, ticks: { color: '#94A3B8' } } }
+    }
+  });
+}
+
+// Fault bar
+const faultLabels = Object.keys(faultCounts);
+const faultValues = Object.values(faultCounts);
+if (faultLabels.length > 0) {
+  new Chart(document.getElementById('faultChart'), {
+    type: 'bar',
+    data: {
+      labels: faultLabels,
+      datasets: [{ label: 'Count', data: faultValues,
+        backgroundColor: ['#DC2626','#D97706','#7C3AED','#2563EB','#16A34A'],
+        borderRadius: 6, borderWidth: 0 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { ticks: { color: '#94A3B8' }, grid: { display: false } },
+                y: { ticks: { color: '#94A3B8' }, grid: { color: '#F1F5F9' } } }
+    }
+  });
+} else {
+  document.getElementById('faultChart').parentElement.innerHTML =
+    '<div class="card-title">Fault Type Breakdown</div><div style="text-align:center;padding:40px;color:var(--gray-400);">No faults recorded yet.</div>';
+}
+</script>
+{% endblock %}

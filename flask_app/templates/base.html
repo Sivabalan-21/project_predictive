@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}PredictMaint AI{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gauge-chart@0.5.3/dist/bundle.js"></script>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">⚙</div>
+      <div>
+        <div class="brand-name">PredictMaint</div>
+        <div class="brand-sub">AI System</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-label">MAIN MENU</div>
+      <a href="/" class="nav-item {% if request.endpoint=='index' %}active{% endif %}">
+        <span class="nav-icon">◈</span> Dashboard
+      </a>
+      <a href="/predict" class="nav-item {% if request.endpoint=='predict' %}active{% endif %}">
+        <span class="nav-icon">◎</span> Predict
+      </a>
+      <a href="/history" class="nav-item {% if request.endpoint=='history' %}active{% endif %}">
+        <span class="nav-icon">◷</span> History
+      </a>
+      <a href="/report" class="nav-item {% if request.endpoint=='report' %}active{% endif %}">
+        <span class="nav-icon">◉</span> Model Report
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-badge">
+        <div class="badge-dot"></div>
+        <span>System Online</span>
+      </div>
+      <div class="sidebar-info">AI4I 2020 · UCI Repository</div>
+      <div class="sidebar-info">MDS · CHRIST University</div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main-content">
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="page-title">{% block page_title %}Dashboard{% endblock %}</h1>
+        <p class="page-sub">{% block page_sub %}{% endblock %}</p>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-badge">
+          <span class="dot-green"></span> Live Monitoring
+        </div>
+        <div class="topbar-user">
+          <div class="user-avatar">MDS</div>
+          <div>
+            <div class="user-name">CHRIST University</div>
+            <div class="user-role">Yeshwanthpur Campus</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

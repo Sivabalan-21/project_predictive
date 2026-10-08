@@ -1,0 +1,993 @@
+{
+  "generated_at_utc": "2026-10-08T04:22:58+00:00",
+  "seed": 42,
+  "pipeline_order": [
+    "raw data",
+    "validate",
+    "stratified train/test split",
+    "5-fold CV on train only (scaler + SMOTE inside each fold)",
+    "selection + threshold tuning from out-of-fold scores",
+    "final fit on train (scaler + SMOTE on train only)",
+    "single evaluation on untouched test set"
+  ],
+  "dataset": {
+    "path": "data/ai4i2020.csv",
+    "sha256": "2f7bdceda6f38332ead2699723569205f20e346fbe3fdae313e3344040d6bf2e",
+    "rows_raw": 10000,
+    "rows_after_cleaning": 10000,
+    "missing_rows_dropped": 0,
+    "duplicate_rows_dropped": 0,
+    "failure_rows": 339,
+    "failure_rate": 0.0339,
+    "label_inconsistencies": {
+      "failure_without_any_fault_flag": 9,
+      "fault_flag_without_machine_failure": 18
+    }
+  },
+  "split": {
+    "test_size": 0.2,
+    "train_rows": 8000,
+    "test_rows": 2000,
+    "train_failures": 271,
+    "test_failures": 68
+  },
+  "library_versions": {
+    "python": "3.12.3",
+    "scikit-learn": "1.8.0",
+    "xgboost": "3.4.1",
+    "imbalanced-learn": "0.14.2",
+    "numpy": "2.4.4",
+    "pandas": "3.0.2",
+    "joblib": "1.5.3"
+  },
+  "feature_set": {
+    "selected": "engineered",
+    "features": [
+      "air_temperature",
+      "process_temperature",
+      "rotational_speed",
+      "torque",
+      "tool_wear",
+      "temp_diff",
+      "power_w",
+      "wear_torque"
+    ],
+    "cv_comparison": {
+      "raw": {
+        "best_candidate": "mean_prob_rf_xgb_tuned",
+        "best_oof_f1": 0.7215686274509804
+      },
+      "engineered": {
+        "best_candidate": "rf_only_tuned_threshold",
+        "best_oof_f1": 0.8471953578336557
+      }
+    }
+  },
+  "selection": {
+    "criterion": "highest pooled out-of-fold F1 (ties: recall); 5-fold CV on train only",
+    "rf_variant": "rf_cw",
+    "rf_variant_criterion": "higher out-of-fold PR-AUC",
+    "tuned_thresholds": {
+      "rf": 0.36,
+      "xgb": 0.7552801370620728,
+      "mean": 0.575054167509079
+    },
+    "selected_decision_method": "rf_only_tuned_threshold",
+    "decision_spec": {
+      "name": "rf_only_tuned_threshold",
+      "kind": "single",
+      "components": [
+        "rf"
+      ],
+      "thresholds": {},
+      "min_votes": 1,
+      "threshold": 0.36,
+      "description": ""
+    }
+  },
+  "cross_validation": {
+    "models": {
+      "rf_class_weight": {
+        "accuracy": 0.988375,
+        "precision": 0.9238095238095239,
+        "recall": 0.7158671586715867,
+        "f1": 0.8066528066528067,
+        "mcc": 0.8076861976664553,
+        "roc_auc": 0.9758309505724115,
+        "pr_auc": 0.8719959422233543,
+        "confusion_matrix": {
+          "tn": 7713,
+          "fp": 16,
+          "fn": 77,
+          "tp": 194
+        },
+        "fold_f1_mean": 0.8059438999927158,
+        "fold_f1_std": 0.04601121006168741,
+        "spec": {
+          "name": "rf_class_weight",
+          "kind": "single",
+          "components": [
+            "rf_cw"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "Random Forest, class_weight='balanced'"
+        }
+      },
+      "rf_smote": {
+        "accuracy": 0.979875,
+        "precision": 0.6598837209302325,
+        "recall": 0.8376383763837638,
+        "f1": 0.7382113821138211,
+        "mcc": 0.7335037360238935,
+        "roc_auc": 0.9786537404771123,
+        "pr_auc": 0.8317654316912519,
+        "confusion_matrix": {
+          "tn": 7612,
+          "fp": 117,
+          "fn": 44,
+          "tp": 227
+        },
+        "fold_f1_mean": 0.737628876076688,
+        "fold_f1_std": 0.03461723615496352,
+        "spec": {
+          "name": "rf_smote",
+          "kind": "single",
+          "components": [
+            "rf_smote"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "Random Forest on SMOTE-resampled training data"
+        }
+      },
+      "xgboost": {
+        "accuracy": 0.985625,
+        "precision": 0.776595744680851,
+        "recall": 0.8081180811808119,
+        "f1": 0.7920433996383364,
+        "mcc": 0.7847682229639665,
+        "roc_auc": 0.9730348966059204,
+        "pr_auc": 0.8078765128864847,
+        "confusion_matrix": {
+          "tn": 7666,
+          "fp": 63,
+          "fn": 52,
+          "tp": 219
+        },
+        "fold_f1_mean": 0.7917541501997944,
+        "fold_f1_std": 0.026956443986672206,
+        "spec": {
+          "name": "xgboost",
+          "kind": "single",
+          "components": [
+            "xgb"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "XGBoost, scale_pos_weight"
+        }
+      },
+      "isolation_forest": {
+        "accuracy": 0.954625,
+        "precision": 0.3357142857142857,
+        "recall": 0.34686346863468637,
+        "f1": 0.3411978221415608,
+        "mcc": 0.31775311583662275,
+        "roc_auc": 0.8781060834285405,
+        "pr_auc": 0.3032589662093674,
+        "confusion_matrix": {
+          "tn": 7543,
+          "fp": 186,
+          "fn": 177,
+          "tp": 94
+        },
+        "fold_f1_mean": 0.34354081595114594,
+        "fold_f1_std": 0.04567624300731865,
+        "spec": {
+          "name": "isolation_forest",
+          "kind": "single",
+          "components": [
+            "iso"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "Isolation Forest anomaly flag"
+        },
+        "auc_source": "continuous anomaly score (not the 0/1 flag)"
+      }
+    },
+    "decision_candidates": {
+      "rf_only": {
+        "accuracy": 0.988375,
+        "precision": 0.9238095238095239,
+        "recall": 0.7158671586715867,
+        "f1": 0.8066528066528067,
+        "mcc": 0.8076861976664553,
+        "roc_auc": 0.9758309505724115,
+        "pr_auc": 0.8719959422233543,
+        "confusion_matrix": {
+          "tn": 7713,
+          "fp": 16,
+          "fn": 77,
+          "tp": 194
+        },
+        "fold_f1_mean": 0.8059438999927158,
+        "fold_f1_std": 0.04601121006168741,
+        "spec": {
+          "name": "rf_only",
+          "kind": "single",
+          "components": [
+            "rf"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": ""
+        }
+      },
+      "rf_only_tuned_threshold": {
+        "accuracy": 0.990125,
+        "precision": 0.8902439024390244,
+        "recall": 0.8081180811808119,
+        "f1": 0.8471953578336557,
+        "mcc": 0.8431585171238402,
+        "roc_auc": 0.9758309505724115,
+        "pr_auc": 0.8719959422233543,
+        "confusion_matrix": {
+          "tn": 7702,
+          "fp": 27,
+          "fn": 52,
+          "tp": 219
+        },
+        "fold_f1_mean": 0.8462867458818449,
+        "fold_f1_std": 0.046594166104695786,
+        "spec": {
+          "name": "rf_only_tuned_threshold",
+          "kind": "single",
+          "components": [
+            "rf"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.36,
+          "description": ""
+        }
+      },
+      "xgb_only": {
+        "accuracy": 0.985625,
+        "precision": 0.776595744680851,
+        "recall": 0.8081180811808119,
+        "f1": 0.7920433996383364,
+        "mcc": 0.7847682229639665,
+        "roc_auc": 0.9730348966059204,
+        "pr_auc": 0.8078765128864847,
+        "confusion_matrix": {
+          "tn": 7666,
+          "fp": 63,
+          "fn": 52,
+          "tp": 219
+        },
+        "fold_f1_mean": 0.7917541501997944,
+        "fold_f1_std": 0.026956443986672206,
+        "spec": {
+          "name": "xgb_only",
+          "kind": "single",
+          "components": [
+            "xgb"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": ""
+        }
+      },
+      "xgb_only_tuned_threshold": {
+        "accuracy": 0.9875,
+        "precision": 0.8489795918367347,
+        "recall": 0.7675276752767528,
+        "f1": 0.8062015503875969,
+        "mcc": 0.8008462913284969,
+        "roc_auc": 0.9730348966059204,
+        "pr_auc": 0.8078765128864847,
+        "confusion_matrix": {
+          "tn": 7692,
+          "fp": 37,
+          "fn": 63,
+          "tp": 208
+        },
+        "fold_f1_mean": 0.8062592804111934,
+        "fold_f1_std": 0.020675402477861683,
+        "spec": {
+          "name": "xgb_only_tuned_threshold",
+          "kind": "single",
+          "components": [
+            "xgb"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.7552801370620728,
+          "description": ""
+        }
+      },
+      "vote_rf_xgb_both": {
+        "accuracy": 0.988375,
+        "precision": 0.9320388349514563,
+        "recall": 0.7084870848708487,
+        "f1": 0.8050314465408805,
+        "mcc": 0.8071470453832217,
+        "roc_auc": null,
+        "pr_auc": null,
+        "confusion_matrix": {
+          "tn": 7715,
+          "fp": 14,
+          "fn": 79,
+          "tp": 192
+        },
+        "fold_f1_mean": 0.8039798673072523,
+        "fold_f1_std": 0.05262759512979346,
+        "spec": {
+          "name": "vote_rf_xgb_both",
+          "kind": "vote",
+          "components": [
+            "rf",
+            "xgb"
+          ],
+          "thresholds": {
+            "rf": 0.5,
+            "xgb": 0.5
+          },
+          "min_votes": 2,
+          "threshold": 0.5,
+          "description": "failure only if RF and XGBoost both vote failure"
+        }
+      },
+      "vote_rf_xgb_either": {
+        "accuracy": 0.985625,
+        "precision": 0.7727272727272727,
+        "recall": 0.8154981549815498,
+        "f1": 0.7935368043087971,
+        "mcc": 0.7864018034059058,
+        "roc_auc": null,
+        "pr_auc": null,
+        "confusion_matrix": {
+          "tn": 7664,
+          "fp": 65,
+          "fn": 50,
+          "tp": 221
+        },
+        "fold_f1_mean": 0.7932532418754713,
+        "fold_f1_std": 0.021939729239426123,
+        "spec": {
+          "name": "vote_rf_xgb_either",
+          "kind": "vote",
+          "components": [
+            "rf",
+            "xgb"
+          ],
+          "thresholds": {
+            "rf": 0.5,
+            "xgb": 0.5
+          },
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "failure if RF or XGBoost votes failure"
+        }
+      },
+      "vote_rf_xgb_iso_2of3": {
+        "accuracy": 0.987375,
+        "precision": 0.8828828828828829,
+        "recall": 0.7232472324723247,
+        "f1": 0.795131845841785,
+        "mcc": 0.7928625927644456,
+        "roc_auc": null,
+        "pr_auc": null,
+        "confusion_matrix": {
+          "tn": 7703,
+          "fp": 26,
+          "fn": 75,
+          "tp": 196
+        },
+        "fold_f1_mean": 0.794218868428346,
+        "fold_f1_std": 0.052334189626840714,
+        "spec": {
+          "name": "vote_rf_xgb_iso_2of3",
+          "kind": "vote",
+          "components": [
+            "rf",
+            "xgb",
+            "iso"
+          ],
+          "thresholds": {
+            "rf": 0.5,
+            "xgb": 0.5
+          },
+          "min_votes": 2,
+          "threshold": 0.5,
+          "description": "original project idea: 2-of-3 majority incl. Isolation Forest"
+        }
+      },
+      "vote_rf_xgb_iso_2of3_tuned_thresholds": {
+        "accuracy": 0.98925,
+        "precision": 0.890295358649789,
+        "recall": 0.7785977859778598,
+        "f1": 0.8307086614173228,
+        "mcc": 0.8271610018085102,
+        "roc_auc": null,
+        "pr_auc": null,
+        "confusion_matrix": {
+          "tn": 7703,
+          "fp": 26,
+          "fn": 60,
+          "tp": 211
+        },
+        "fold_f1_mean": 0.8305798058784923,
+        "fold_f1_std": 0.042596519068720036,
+        "spec": {
+          "name": "vote_rf_xgb_iso_2of3_tuned_thresholds",
+          "kind": "vote",
+          "components": [
+            "rf",
+            "xgb",
+            "iso"
+          ],
+          "thresholds": {
+            "rf": 0.36,
+            "xgb": 0.7552801370620728
+          },
+          "min_votes": 2,
+          "threshold": 0.5,
+          "description": "2-of-3 majority, RF/XGB thresholds tuned on out-of-fold scores"
+        }
+      },
+      "mean_prob_rf_xgb_t0.5": {
+        "accuracy": 0.988625,
+        "precision": 0.8543307086614174,
+        "recall": 0.8007380073800738,
+        "f1": 0.8266666666666667,
+        "mcc": 0.8212529470630157,
+        "roc_auc": 0.975331322727123,
+        "pr_auc": 0.8670600632799607,
+        "confusion_matrix": {
+          "tn": 7692,
+          "fp": 37,
+          "fn": 54,
+          "tp": 217
+        },
+        "fold_f1_mean": 0.8260180227549817,
+        "fold_f1_std": 0.041242005280669826,
+        "spec": {
+          "name": "mean_prob_rf_xgb_t0.5",
+          "kind": "prob_mean",
+          "components": [
+            "rf",
+            "xgb"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "mean(RF, XGB) probability >= 0.5"
+        }
+      },
+      "mean_prob_rf_xgb_tuned": {
+        "accuracy": 0.989625,
+        "precision": 0.8949579831932774,
+        "recall": 0.7859778597785978,
+        "f1": 0.8369351669941061,
+        "mcc": 0.8334707322847652,
+        "roc_auc": 0.975331322727123,
+        "pr_auc": 0.8670600632799607,
+        "confusion_matrix": {
+          "tn": 7704,
+          "fp": 25,
+          "fn": 58,
+          "tp": 213
+        },
+        "fold_f1_mean": 0.8365964579814431,
+        "fold_f1_std": 0.03590412381541876,
+        "spec": {
+          "name": "mean_prob_rf_xgb_tuned",
+          "kind": "prob_mean",
+          "components": [
+            "rf",
+            "xgb"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.575054167509079,
+          "description": "mean(RF, XGB) probability >= threshold tuned on out-of-fold scores"
+        }
+      }
+    }
+  },
+  "test": {
+    "models": {
+      "rf_class_weight": {
+        "accuracy": 0.988,
+        "precision": 0.9074074074074074,
+        "recall": 0.7205882352941176,
+        "f1": 0.8032786885245902,
+        "mcc": 0.8028128422430929,
+        "roc_auc": 0.9792542016806723,
+        "pr_auc": 0.8570580535952438,
+        "confusion_matrix": {
+          "tn": 1927,
+          "fp": 5,
+          "fn": 19,
+          "tp": 49
+        },
+        "spec": {
+          "name": "rf_class_weight",
+          "kind": "single",
+          "components": [
+            "rf_cw"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "Random Forest, class_weight='balanced'"
+        }
+      },
+      "rf_smote": {
+        "accuracy": 0.9785,
+        "precision": 0.6404494382022472,
+        "recall": 0.8382352941176471,
+        "f1": 0.7261146496815286,
+        "mcc": 0.7221563528897561,
+        "roc_auc": 0.9847346547314578,
+        "pr_auc": 0.8302211172026446,
+        "confusion_matrix": {
+          "tn": 1900,
+          "fp": 32,
+          "fn": 11,
+          "tp": 57
+        },
+        "spec": {
+          "name": "rf_smote",
+          "kind": "single",
+          "components": [
+            "rf_smote"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "Random Forest on SMOTE-resampled training data"
+        }
+      },
+      "xgboost": {
+        "accuracy": 0.9855,
+        "precision": 0.7671232876712328,
+        "recall": 0.8235294117647058,
+        "f1": 0.7943262411347518,
+        "mcc": 0.7873531441437022,
+        "roc_auc": 0.9810010960906101,
+        "pr_auc": 0.8631558789073402,
+        "confusion_matrix": {
+          "tn": 1915,
+          "fp": 17,
+          "fn": 12,
+          "tp": 56
+        },
+        "spec": {
+          "name": "xgboost",
+          "kind": "single",
+          "components": [
+            "xgb"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "XGBoost, scale_pos_weight"
+        }
+      },
+      "isolation_forest": {
+        "accuracy": 0.959,
+        "precision": 0.36538461538461536,
+        "recall": 0.27941176470588236,
+        "f1": 0.31666666666666665,
+        "mcc": 0.2987524779402564,
+        "roc_auc": 0.8834414200462795,
+        "pr_auc": 0.3023308380427955,
+        "confusion_matrix": {
+          "tn": 1899,
+          "fp": 33,
+          "fn": 49,
+          "tp": 19
+        },
+        "spec": {
+          "name": "isolation_forest",
+          "kind": "single",
+          "components": [
+            "iso"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "Isolation Forest anomaly flag"
+        },
+        "auc_source": "continuous anomaly score (not the 0/1 flag)"
+      }
+    },
+    "decision_candidates": {
+      "rf_only": {
+        "accuracy": 0.988,
+        "precision": 0.9074074074074074,
+        "recall": 0.7205882352941176,
+        "f1": 0.8032786885245902,
+        "mcc": 0.8028128422430929,
+        "roc_auc": 0.9792542016806723,
+        "pr_auc": 0.8570580535952438,
+        "confusion_matrix": {
+          "tn": 1927,
+          "fp": 5,
+          "fn": 19,
+          "tp": 49
+        },
+        "spec": {
+          "name": "rf_only",
+          "kind": "single",
+          "components": [
+            "rf"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": ""
+        }
+      },
+      "rf_only_tuned_threshold": {
+        "accuracy": 0.991,
+        "precision": 0.9032258064516129,
+        "recall": 0.8235294117647058,
+        "f1": 0.8615384615384616,
+        "mcc": 0.8578740841904753,
+        "roc_auc": 0.9792542016806723,
+        "pr_auc": 0.8570580535952438,
+        "confusion_matrix": {
+          "tn": 1926,
+          "fp": 6,
+          "fn": 12,
+          "tp": 56
+        },
+        "spec": {
+          "name": "rf_only_tuned_threshold",
+          "kind": "single",
+          "components": [
+            "rf"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.36,
+          "description": ""
+        }
+      },
+      "xgb_only": {
+        "accuracy": 0.9855,
+        "precision": 0.7671232876712328,
+        "recall": 0.8235294117647058,
+        "f1": 0.7943262411347518,
+        "mcc": 0.7873531441437022,
+        "roc_auc": 0.9810010960906101,
+        "pr_auc": 0.8631558789073402,
+        "confusion_matrix": {
+          "tn": 1915,
+          "fp": 17,
+          "fn": 12,
+          "tp": 56
+        },
+        "spec": {
+          "name": "xgb_only",
+          "kind": "single",
+          "components": [
+            "xgb"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": ""
+        }
+      },
+      "xgb_only_tuned_threshold": {
+        "accuracy": 0.988,
+        "precision": 0.84375,
+        "recall": 0.7941176470588235,
+        "f1": 0.8181818181818182,
+        "mcc": 0.8123819126633817,
+        "roc_auc": 0.9810010960906101,
+        "pr_auc": 0.8631558789073402,
+        "confusion_matrix": {
+          "tn": 1922,
+          "fp": 10,
+          "fn": 14,
+          "tp": 54
+        },
+        "spec": {
+          "name": "xgb_only_tuned_threshold",
+          "kind": "single",
+          "components": [
+            "xgb"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.7552801370620728,
+          "description": ""
+        }
+      },
+      "vote_rf_xgb_both": {
+        "accuracy": 0.988,
+        "precision": 0.9074074074074074,
+        "recall": 0.7205882352941176,
+        "f1": 0.8032786885245902,
+        "mcc": 0.8028128422430929,
+        "roc_auc": null,
+        "pr_auc": null,
+        "confusion_matrix": {
+          "tn": 1927,
+          "fp": 5,
+          "fn": 19,
+          "tp": 49
+        },
+        "spec": {
+          "name": "vote_rf_xgb_both",
+          "kind": "vote",
+          "components": [
+            "rf",
+            "xgb"
+          ],
+          "thresholds": {
+            "rf": 0.5,
+            "xgb": 0.5
+          },
+          "min_votes": 2,
+          "threshold": 0.5,
+          "description": "failure only if RF and XGBoost both vote failure"
+        }
+      },
+      "vote_rf_xgb_either": {
+        "accuracy": 0.9855,
+        "precision": 0.7671232876712328,
+        "recall": 0.8235294117647058,
+        "f1": 0.7943262411347518,
+        "mcc": 0.7873531441437022,
+        "roc_auc": null,
+        "pr_auc": null,
+        "confusion_matrix": {
+          "tn": 1915,
+          "fp": 17,
+          "fn": 12,
+          "tp": 56
+        },
+        "spec": {
+          "name": "vote_rf_xgb_either",
+          "kind": "vote",
+          "components": [
+            "rf",
+            "xgb"
+          ],
+          "thresholds": {
+            "rf": 0.5,
+            "xgb": 0.5
+          },
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "failure if RF or XGBoost votes failure"
+        }
+      },
+      "vote_rf_xgb_iso_2of3": {
+        "accuracy": 0.9875,
+        "precision": 0.864406779661017,
+        "recall": 0.75,
+        "f1": 0.8031496062992126,
+        "mcc": 0.7988699820227858,
+        "roc_auc": null,
+        "pr_auc": null,
+        "confusion_matrix": {
+          "tn": 1924,
+          "fp": 8,
+          "fn": 17,
+          "tp": 51
+        },
+        "spec": {
+          "name": "vote_rf_xgb_iso_2of3",
+          "kind": "vote",
+          "components": [
+            "rf",
+            "xgb",
+            "iso"
+          ],
+          "thresholds": {
+            "rf": 0.5,
+            "xgb": 0.5
+          },
+          "min_votes": 2,
+          "threshold": 0.5,
+          "description": "original project idea: 2-of-3 majority incl. Isolation Forest"
+        }
+      },
+      "vote_rf_xgb_iso_2of3_tuned_thresholds": {
+        "accuracy": 0.99,
+        "precision": 0.8870967741935484,
+        "recall": 0.8088235294117647,
+        "f1": 0.8461538461538461,
+        "mcc": 0.841955690288032,
+        "roc_auc": null,
+        "pr_auc": null,
+        "confusion_matrix": {
+          "tn": 1925,
+          "fp": 7,
+          "fn": 13,
+          "tp": 55
+        },
+        "spec": {
+          "name": "vote_rf_xgb_iso_2of3_tuned_thresholds",
+          "kind": "vote",
+          "components": [
+            "rf",
+            "xgb",
+            "iso"
+          ],
+          "thresholds": {
+            "rf": 0.36,
+            "xgb": 0.7552801370620728
+          },
+          "min_votes": 2,
+          "threshold": 0.5,
+          "description": "2-of-3 majority, RF/XGB thresholds tuned on out-of-fold scores"
+        }
+      },
+      "mean_prob_rf_xgb_t0.5": {
+        "accuracy": 0.989,
+        "precision": 0.859375,
+        "recall": 0.8088235294117647,
+        "f1": 0.8333333333333334,
+        "mcc": 0.8280576982581521,
+        "roc_auc": 0.9831780538302277,
+        "pr_auc": 0.8582457705513297,
+        "confusion_matrix": {
+          "tn": 1923,
+          "fp": 9,
+          "fn": 13,
+          "tp": 55
+        },
+        "spec": {
+          "name": "mean_prob_rf_xgb_t0.5",
+          "kind": "prob_mean",
+          "components": [
+            "rf",
+            "xgb"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.5,
+          "description": "mean(RF, XGB) probability >= 0.5"
+        }
+      },
+      "mean_prob_rf_xgb_tuned": {
+        "accuracy": 0.989,
+        "precision": 0.8833333333333333,
+        "recall": 0.7794117647058824,
+        "f1": 0.828125,
+        "mcc": 0.8241853819283648,
+        "roc_auc": 0.9831780538302277,
+        "pr_auc": 0.8582457705513297,
+        "confusion_matrix": {
+          "tn": 1925,
+          "fp": 7,
+          "fn": 15,
+          "tp": 53
+        },
+        "spec": {
+          "name": "mean_prob_rf_xgb_tuned",
+          "kind": "prob_mean",
+          "components": [
+            "rf",
+            "xgb"
+          ],
+          "thresholds": {},
+          "min_votes": 1,
+          "threshold": 0.575054167509079,
+          "description": "mean(RF, XGB) probability >= threshold tuned on out-of-fold scores"
+        }
+      }
+    },
+    "selected": {
+      "name": "rf_only_tuned_threshold",
+      "accuracy": 0.991,
+      "precision": 0.9032258064516129,
+      "recall": 0.8235294117647058,
+      "f1": 0.8615384615384616,
+      "mcc": 0.8578740841904753,
+      "roc_auc": 0.9792542016806723,
+      "pr_auc": 0.8570580535952438,
+      "confusion_matrix": {
+        "tn": 1926,
+        "fp": 6,
+        "fn": 12,
+        "tp": 56
+      },
+      "spec": {
+        "name": "rf_only_tuned_threshold",
+        "kind": "single",
+        "components": [
+          "rf"
+        ],
+        "thresholds": {},
+        "min_votes": 1,
+        "threshold": 0.36,
+        "description": ""
+      },
+      "bootstrap_95ci": {
+        "precision": [
+          0.8253869047619047,
+          0.9682663690476191
+        ],
+        "recall": [
+          0.7258064516129032,
+          0.9123185117967332
+        ],
+        "f1": [
+          0.789461612747465,
+          0.9209186496956281
+        ],
+        "resamples": 1000
+      }
+    }
+  },
+  "risk_score": {
+    "definition": "mean of RF and XGBoost failure probabilities",
+    "calibrated": false,
+    "brier_score": 0.00997889606767732,
+    "roc_auc": 0.9831780538302277,
+    "pr_auc": 0.8582457705513297,
+    "note": "Not a calibrated probability: no calibration step was fitted or evaluated."
+  },
+  "fault_rules_validation": {
+    "TWF": {
+      "tp": 45,
+      "fp": 756,
+      "fn": 1,
+      "label_count": 46,
+      "precision": 0.056179775280898875,
+      "recall": 0.9782608695652174
+    },
+    "HDF": {
+      "tp": 115,
+      "fp": 0,
+      "fn": 0,
+      "label_count": 115,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "PWF": {
+      "tp": 95,
+      "fp": 0,
+      "fn": 0,
+      "label_count": 95,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "OSF": {
+      "tp": 98,
+      "fp": 0,
+      "fn": 0,
+      "label_count": 98,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "RNF": {
+      "label_count": 19,
+      "note": "No sensor rule exists (random by definition)."
+    },
+    "_scope": "Evaluated on the full synthetic dataset; rules are fixed from the dataset description, not fitted."
+  },
+  "limitations": [
+    "Single dataset (synthetic AI4I 2020, 10,000 rows, ~3.4% failures): results do not transfer to real machines.",
+    "Test set has only 68 failures: metrics are noisy; see bootstrap_95ci.",
+    "Hyperparameters were not tuned; thresholds were tuned on out-of-fold scores.",
+    "risk_score is not calibrated."
+  ]
+}

@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Predict · PredictMaint{% endblock %}
+{% block page_title %}Predict{% endblock %}
+{% block page_sub %}Enter live sensor values to get instant machine health classification{% endblock %}
+
+{% block content %}
+<div class="predict-layout">
+
+  <!-- Left: Form -->
+  <div class="card">
+    <div class="card-title">Sensor Input Parameters</div>
+
+    <form method="POST" id="predictForm">
+      <div class="form-group">
+        <label class="form-label">
+          🌡 Air Temperature (K)
+          <span id="air_val">300.0</span>
+        </label>
+        <input type="range" name="air_temp" min="290" max="310" step="0.1"
+               value="300" oninput="document.getElementById('air_val').textContent=parseFloat(this.value).toFixed(1);updateRisk()">
+        <div class="slider-range"><span>290 K</span><span>310 K</span></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          🔥 Process Temperature (K)
+          <span id="proc_val">310.0</span>
+        </label>
+        <input type="range" name="proc_temp" min="305" max="320" step="0.1"
+               value="310" oninput="document.getElementById('proc_val').textContent=parseFloat(this.value).toFixed(1);updateRisk()">
+        <div class="slider-range"><span>305 K</span><span>320 K</span></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          ⚙ Rotational Speed (RPM)
+          <span id="rpm_val">1500</span>
+        </label>
+        <input type="range" name="rot_speed" min="1000" max="2900" step="10"
+               value="1500" oninput="document.getElementById('rpm_val').textContent=this.value;updateRisk()">
+        <div class="slider-range"><span>1000</span><span>2900</span></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          🔩 Torque (Nm)
+          <span id="torq_val">40.0</span>
+        </label>
+        <input type="range" name="torque" min="1" max="80" step="0.1"
+               value="40" oninput="document.getElementById('torq_val').textContent=parseFloat(this.value).toFixed(1);updateRisk()">
+        <div class="slider-range"><span>1 Nm</span><span>80 Nm</span></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          🔧 Tool Wear (min)
+          <span id="wear_val">100</span>
+        </label>
+        <input type="range" name="tool_wear" min="0" max="260" step="1"
+               value="100" oninput="document.getElementById('wear_val').textContent=this.value;updateRisk()">
+        <div class="slider-range"><span>0</span><span>260 min</span></div>
+      </div>
+
+      <!-- Risk indicators -->
+      <div class="card-title" style="margin-top:8px;">Risk Indicators</div>
+      <div class="risk-card">
+        <div>
+          <div class="risk-label">Temperature Differential</div>
+          <div class="risk-value" id="risk_temp_diff">10.0 K</div>
+        </div>
+        <div class="risk-status" id="risk_temp_status">✅ Normal</div>
+      </div>
+      <div class="risk-card">
+        <div>
+          <div class="risk-label">Power (torque × speed, W)</div>
+          <div class="risk-value" id="risk_power">6,283 W</div>
+        </div>
+        <div class="risk-status" id="risk_power_status">✅ Normal</div>
+      </div>
+
+      <button type="submit" class="btn-predict">
+        🚀 Analyse Machine Health
+      </button>
+    </form>
+  </div>
+
+  <!-- Right: Result -->
+  <div class="result-panel">
+    {% if error %}
+    <div class="card" style="padding:16px;border-left:4px solid #DC2626;">
+      <div class="card-title">Invalid input</div>
+      <div style="font-size:13px;color:#DC2626;">{{ error }}</div>
+    </div>
+    {% elif result %}
+
+    <!-- Status -->
+    <div class="result-status {{ 'failure' if result.is_failure else 'normal' }}">
+      <div class="result-icon">{{ '🚨' if result.is_failure else '✅' }}</div>
+      <div class="result-label {{ 'failure' if result.is_failure else 'normal' }}">
+        {{ 'MACHINE FAILURE' if result.is_failure else 'NORMAL OPERATION' }}
+      </div>
+      <div class="result-desc">
+        {{ 'Immediate maintenance action required!' if result.is_failure else 'All sensor parameters are within safe operating limits.' }}
+      </div>
+    </div>
+
+    {% if result.is_failure %}
+    <div class="fault-banner">
+      <div class="fault-label">Fault Type Identified</div>
+      <div class="fault-value">
+        {% set names = {'TWF':'🔧 TWF — Tool Wear Failure','HDF':'🌡 HDF — Heat Dissipation Failure','PWF':'⚡ PWF — Power Failure','OSF':'💪 OSF — Overstrain Failure','RNF':'❓ RNF — Random / unexplained (residual)'} %}
+        {% for code in result.fault_codes %}<div>{{ names[code] }}</div>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Model votes -->
+    <div class="card" style="padding:16px;">
+      <div class="card-title">Model Votes</div>
+      <div class="model-votes">
+        {% for name, pred, conf in [
+          ('Random Forest', result.rf_prediction, result.rf_probability),
+          ('XGBoost', result.xgb_prediction, result.xgb_probability),
+          ('Isolation Forest', result.isolation_prediction, none)
+        ] %}
+        <div class="vote-card {{ 'failure' if pred == 1 else 'normal' }}">
+          <div class="vote-name">{{ name }}</div>
+          <div class="vote-label {{ 'failure' if pred == 1 else 'normal' }}">
+            {{ 'FAILURE' if pred == 1 else 'NORMAL' }}
+          </div>
+          <div class="vote-conf">
+            {% if conf is not none %}p = {{ '%.2f'|format(conf) }}{% else %}anomaly score {{ '%.2f'|format(result.isolation_anomaly_score) }}{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Probability bars -->
+    <div class="card" style="padding:16px;">
+      <div class="card-title">Model-derived Risk Score: {{ '%.2f'|format(result.risk_score) }}</div>
+      <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">Mean of the RF and XGBoost failure probabilities. Not a calibrated confidence.</div>
+      {% for name, conf in [('Random Forest', result.rf_probability * 100), ('XGBoost', result.xgb_probability * 100), ('Risk score', result.risk_score * 100)] %}
+      <div class="prob-bar-wrap">
+        <div class="prob-bar-header">
+          <span class="prob-bar-name">{{ name }}</span>
+          <span class="prob-bar-val" style="color:{{ '#DC2626' if conf > 50 else '#16A34A' }};">{{ '%.1f'|format(conf) }}%</span>
+        </div>
+        <div class="prob-bar-track">
+          <div class="prob-bar-fill {{ 'danger' if conf > 50 else 'safe' }}" style="width:{{ '%.1f'|format(conf) }}%"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Input summary -->
+    <div class="card" style="padding:16px;">
+      <div class="card-title">Input Summary</div>
+      <div class="grid-2" style="gap:10px;margin:0;">
+        {% for label, val in [
+          ('Air Temperature', result.input['Air temperature']|string + ' K'),
+          ('Process Temp', result.input['Process temperature']|string + ' K'),
+          ('Rotational Speed', result.input['Rotational speed']|string + ' RPM'),
+          ('Torque', result.input['Torque']|string + ' Nm'),
+          ('Tool Wear', result.input['Tool wear']|string + ' min'),
+          ('Decision method', result.decision_method)
+        ] %}
+        <div style="background:var(--gray-50);border-radius:8px;padding:10px 12px;
+             border:1px solid var(--gray-200);">
+          <div style="font-size:11px;color:var(--gray-400);margin-bottom:2px;">{{ label }}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--gray-800);">{{ val }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% else %}
+    <div class="awaiting">
+      <div class="awaiting-icon">⚙️</div>
+      <div class="awaiting-title">Awaiting Sensor Input</div>
+      <div class="awaiting-desc">Adjust the sliders and click Analyse Machine Health to get the prediction.</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateRisk() {
+  const at = parseFloat(document.querySelector('[name=air_temp]').value);
+  const pt = parseFloat(document.querySelector('[name=proc_temp]').value);
+  const tq = parseFloat(document.querySelector('[name=torque]').value);
+  const rs = parseFloat(document.querySelector('[name=rot_speed]').value);
+
+  const diff  = (pt - at).toFixed(1);
+  const pw = tq * rs * 2 * Math.PI / 60;  // watts
+  const power = Math.round(pw).toLocaleString() + ' W';
+
+  document.getElementById('risk_temp_diff').textContent = diff + ' K';
+  document.getElementById('risk_power').textContent     = power;
+
+  const ts = document.getElementById('risk_temp_status');
+  const ps = document.getElementById('risk_power_status');
+
+  ts.textContent  = diff >= 8.6 ? '✅ Normal' : '⚠️ Low (HDF needs rpm < 1380 too)';
+  ts.style.color  = diff >= 8.6 ? 'var(--success)' : 'var(--warning)';
+
+  ps.textContent  = (pw >= 3500 && pw <= 9000) ? '✅ Normal' : '⚠️ Out of range';
+  ps.style.color  = (pw >= 3500 && pw <= 9000) ? 'var(--success)' : 'var(--warning)';
+}
+updateRisk();
+</script>
+{% endblock %}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Model Report · PredictMaint{% endblock %}
+{% block page_title %}Model Performance Report{% endblock %}
+{% block page_sub %}Leak-free evaluation · all numbers read from reports/model_metrics.json{% endblock %}
+
+{% block content %}
+{% if not report %}
+<div class="card"><div class="card-title">No metrics available</div>
+  <div style="font-size:13px;color:var(--gray-600);">{{ missing_hint }}</div></div>
+{% else %}
+{% set sel = report.test.selected %}
+{% macro p(v) %}{% if v is none %}n/a{% else %}{{ '%.1f'|format(v * 100) }}%{% endif %}{% endmacro %}
+
+<div style="background:linear-gradient(135deg,#1D4ED8,#2563EB);border-radius:var(--radius);padding:24px 32px;margin-bottom:28px;box-shadow:0 4px 20px rgba(37,99,235,.3);">
+  <div style="color:rgba(255,255,255,.7);font-size:12px;font-weight:600;letter-spacing:1.5px;margin-bottom:4px;">SELECTED DECISION METHOD</div>
+  <div style="color:white;font-size:24px;font-weight:800;">{{ sel.name }}</div>
+  <div style="color:rgba(255,255,255,.85);font-size:14px;margin-top:6px;">
+    Held-out test set ({{ report.split.test_rows }} rows, {{ report.split.test_failures }} failures):
+    Precision {{ p(sel.precision) }} · Recall {{ p(sel.recall) }} · F1 {{ p(sel.f1) }}
+    (95% bootstrap CI for F1: {{ p(sel.bootstrap_95ci.f1[0]) }}–{{ p(sel.bootstrap_95ci.f1[1]) }})
+  </div>
+  <div style="color:rgba(255,255,255,.65);font-size:12px;margin-top:6px;">
+    Chosen by {{ report.selection.criterion }}. The test set played no part in the choice.
+  </div>
+</div>
+
+<div class="model-cards">
+  {% for key, label in [('rf_class_weight','Random Forest (class weights)'),('rf_smote','Random Forest + SMOTE'),('xgboost','XGBoost'),('isolation_forest','Isolation Forest')] %}
+  {% set m = report.test.models[key] %}
+  <div class="model-card">
+    <div class="model-name">{{ label }}</div>
+    {% for lbl, val in [('Precision',m.precision),('Recall',m.recall),('F1 Score',m.f1),('ROC AUC',m.roc_auc),('PR AUC',m.pr_auc),('Accuracy',m.accuracy)] %}
+    <div class="metric-row"><span class="metric-key">{{ lbl }}</span><span class="metric-val">{{ p(val) }}</span></div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="grid-2">
+  <div class="card"><div class="card-title">Precision / Recall / F1 by model (test set)</div>
+    <canvas id="barChart" height="240"></canvas></div>
+  <div class="card"><div class="card-title">Decision methods compared</div>
+    <table class="data-table" style="width:100%;font-size:12px;">
+      <thead><tr><th>Method</th><th>CV F1</th><th>Test P</th><th>Test R</th><th>Test F1</th></tr></thead>
+      <tbody>
+      {% for name, m in report.test.decision_candidates.items() %}
+      <tr {% if name == sel.name %}style="font-weight:700;"{% endif %}>
+        <td>{{ name }}</td><td>{{ p(report.cross_validation.decision_candidates[name].f1) }}</td>
+        <td>{{ p(m.precision) }}</td><td>{{ p(m.recall) }}</td><td>{{ p(m.f1) }}</td></tr>
+      {% endfor %}
+      </tbody></table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">How to read this</div>
+  <div style="font-size:13px;color:var(--gray-600);line-height:1.7;">
+    <p>Only ~{{ '%.1f'|format(report.dataset.failure_rate * 100) }}% of rows are failures, so accuracy is not used to rank models
+       (predicting "normal" always already scores ~{{ '%.1f'|format((1 - report.dataset.failure_rate) * 100) }}%). Selection used F1; recall and precision are shown alongside.</p>
+    <p>Differences between several decision methods are smaller than the noise: fold-to-fold F1 varies by roughly ±4 points and the test set has only
+       {{ report.split.test_failures }} failures. Treat close rankings as ties.</p>
+    <p><b>Isolation Forest</b> is unsupervised; its ROC AUC is computed from its continuous anomaly score and it is a weak failure detector here.</p>
+    <p><b>Risk score</b> = mean of RF and XGBoost failure probabilities. It is <b>not</b> calibrated (Brier score {{ '%.4f'|format(report.risk_score.brier_score) }}, informational only).</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Limitations</div>
+  <ul style="font-size:13px;color:var(--gray-600);line-height:1.7;padding-left:18px;">
+    {% for item in report.limitations %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+  <div style="font-size:11px;color:var(--gray-400);margin-top:8px;">Generated {{ report.generated_at_utc }} · scikit-learn {{ report.library_versions['scikit-learn'] }} · xgboost {{ report.library_versions.xgboost }}</div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if report %}
+<script>
+const models = {{ report.test.models | tojson }};
+const keys = ['rf_class_weight','rf_smote','xgboost','isolation_forest'];
+const names = ['RF (class wt)','RF + SMOTE','XGBoost','Isolation Forest'];
+const ds = (label, field, color) => ({label, data: keys.map(k => +(models[k][field] * 100).toFixed(1)),
+  backgroundColor: color, borderRadius: 6, borderWidth: 0});
+new Chart(document.getElementById('barChart'), {
+  type: 'bar',
+  data: { labels: names, datasets: [ds('Precision','precision','#2563EB'), ds('Recall','recall','#16A34A'), ds('F1','f1','#7C3AED')] },
+  options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } },
+    scales: { x: { grid: { display: false } }, y: { max: 100, grid: { color: '#F1F5F9' } } } }
+});
+</script>
+{% endif %}
+{% endblock %}

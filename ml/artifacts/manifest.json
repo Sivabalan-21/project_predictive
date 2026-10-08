@@ -1,0 +1,66 @@
+{
+  "trained_at_utc": "2026-10-08T04:22:58+00:00",
+  "seed": 42,
+  "feature_set": "engineered",
+  "features": [
+    "air_temperature",
+    "process_temperature",
+    "rotational_speed",
+    "torque",
+    "tool_wear",
+    "temp_diff",
+    "power_w",
+    "wear_torque"
+  ],
+  "rf_variant": "rf_cw",
+  "decision": {
+    "name": "rf_only_tuned_threshold",
+    "kind": "single",
+    "components": [
+      "rf"
+    ],
+    "thresholds": {},
+    "min_votes": 1,
+    "threshold": 0.36,
+    "description": ""
+  },
+  "risk_score": "mean of RF and XGBoost failure probabilities (NOT calibrated)",
+  "dataset_sha256": "2f7bdceda6f38332ead2699723569205f20e346fbe3fdae313e3344040d6bf2e",
+  "library_versions": {
+    "python": "3.12.3",
+    "scikit-learn": "1.8.0",
+    "xgboost": "3.4.1",
+    "imbalanced-learn": "0.14.2",
+    "numpy": "2.4.4",
+    "pandas": "3.0.2",
+    "joblib": "1.5.3"
+  },
+  "environment": {
+    "os": "Linux",
+    "platform": "Linux-6.18.44-fc-v80-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "python_implementation": "CPython"
+  },
+  "xgboost_serialization": "xgboost.Booster.save_raw('ubj') inside joblib (portable; no RNG state)",
+  "artifact_sha256": {
+    "scaler.joblib": "f2672a57964d51d457a2f94ed48345a7a10ee97e01e1e5acabf37e7dec6d61f2",
+    "random_forest.joblib": "43933967bd504561b413bbed8935563b4b7aeade3f7649e6a21851b752d099f7",
+    "xgboost.joblib": "7997e6cff5aa85b975b5d8be4715b5e58273edd361cf3159253667b83a8ddc1b",
+    "isolation_forest.joblib": "07769c09d1071f91c5ed3007183a74bd6d18d077c39f6c353e16ddc44a128d9b"
+  },
+  "validation": {
+    "method": "save -> reload round-trip; outputs compared bit-for-bit on a held-out probe",
+    "probe_rows": 2000,
+    "in_process_reload": true,
+    "fresh_process_reload": true,
+    "non_portable_markers_absent": [
+      "rng_state"
+    ],
+    "artifacts_verified": [
+      "isolation_forest.joblib",
+      "random_forest.joblib",
+      "scaler.joblib",
+      "xgboost.joblib"
+    ]
+  }
+}
