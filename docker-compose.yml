@@ -1,0 +1,64 @@
+# Local infrastructure for Phase 3: PostgreSQL + Kafka (Zookeeper mode). Credentials come from your .env (never committed).
+#   cp .env.example .env   # then edit
+#   docker compose up -d
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-predictive_maintenance}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports: ["127.0.0.1:5433:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-predictive_maintenance}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes: ["zkdata:/var/lib/zookeeper/data", "zklog:/var/lib/zookeeper/log"]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on: [zookeeper]
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes: ["kafkadata:/var/lib/kafka/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  kafka-init:                       # creates the three topics, then exits
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      kafka: {condition: service_healthy}
+    restart: "no"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        for t in sensor-readings predictions alerts; do
+          kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic $$t --partitions 3 --replication-factor 1
+        done
+
+volumes:
+  pgdata:
+  zkdata:
+  zklog:
+  kafkadata:

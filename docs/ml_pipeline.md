@@ -106,3 +106,7 @@ honours `std::hex`. A model pickled on Linux and loaded on Windows therefore fai
 with `subsample` / `colsample_*` < 1 (this one: 0.8 / 0.8) is affected. The pipeline now stores the booster as
 XGBoost's portable UBJSON model (`Booster.save_raw("ubj")`) inside the joblib file; `xgboost.joblib` still loads
 with a plain `joblib.load` into an `XGBClassifier`, with no project imports required.
+
+## Phase 3 note
+The ML pipeline is unchanged. The persisting consumer calls `ml.prediction.PredictionService.predict()` and stores its output; `risk_score` remains the mean of
+the RF and XGBoost failure probabilities (not calibrated). `rf_probability`, `xgb_probability` and the isolation-forest `anomaly_score` are stored alongside it.
