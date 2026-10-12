@@ -1,0 +1,20 @@
+# Runtime dependencies of the API + consumer (what the Docker image installs). NO versions here on purpose: install with
+#   sed -E 's/\[[^]]*\]//' requirements.txt > constraints.txt      # (constraint files may not contain extras)
+#   pip install -r requirements-service.txt -c constraints.txt
+# so every version is taken from the pins in requirements.txt (single source of truth). This is exactly what the Dockerfile runs.
+# Left out vs requirements.txt: training/UI packages (matplotlib, imbalanced-learn, streamlit, plotly, flask).
+numpy
+pandas
+scikit-learn
+xgboost
+joblib
+confluent-kafka
+pydantic
+sqlalchemy
+alembic
+psycopg[binary]
+fastapi
+uvicorn
+PyJWT
+argon2-cffi
+prometheus-client

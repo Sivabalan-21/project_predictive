@@ -5,10 +5,12 @@ from confluent_kafka import KafkaError
 
 
 class FakeKafkaMessage:
-    def __init__(self, value, topic="machine-sensor-data", partition=0, offset=0, error=None):
+    def __init__(self, value, topic="machine-sensor-data", partition=0, offset=0, error=None, key=None):
         self._value, self._topic, self._partition, self._offset, self._error = value, topic, partition, offset, error
+        self._key = key
 
     def value(self): return self._value
+    def key(self): return self._key
     def topic(self): return self._topic
     def partition(self): return self._partition
     def offset(self): return self._offset
@@ -23,7 +25,7 @@ class FakeProducer:
         self.buffer_errors, self.produce_exception, self.fail_delivery = buffer_errors, produce_exception, fail_delivery
         self.flushed = 0
 
-    def produce(self, topic, key=None, value=None, on_delivery=None):
+    def produce(self, topic, key=None, value=None, on_delivery=None, headers=None):
         if self.produce_exception is not None:
             raise self.produce_exception
         if self.buffer_errors > 0:

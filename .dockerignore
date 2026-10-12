@@ -1,0 +1,22 @@
+# Keep secrets, VCS data and everything the service does not need out of the build context.
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.venv
+venv
+tests
+app
+flask_app
+data
+reports
+docs
+*.md
+ARCHITECTURE_AUDIT.md
+docker-compose.yml
+Dockerfile
+.dockerignore

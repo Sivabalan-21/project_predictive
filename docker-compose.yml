@@ -1,6 +1,36 @@
-# Local infrastructure for Phase 3: PostgreSQL + Kafka (Zookeeper mode). Credentials come from your .env (never committed).
-#   cp .env.example .env   # then edit
-#   docker compose up -d
+# Local infrastructure + (optional) the application.   Credentials come from your .env (never committed).
+#
+#   cp .env.example .env                      # then edit: POSTGRES_PASSWORD and JWT_SECRET
+#   docker compose up -d                      # DEFAULT: PostgreSQL + Kafka only (as in Phase 3; run the app from your venv)
+#   docker compose --profile app up -d --build    # ... plus migrate (one-shot) -> api + consumer, in containers
+#
+# Ports are published on 127.0.0.1 only. To expose them on other interfaces set POSTGRES_BIND_ADDR / KAFKA_BIND_ADDR /
+# API_BIND_ADDR in .env deliberately (and read the notes in docs/docker.md first: PostgreSQL and Kafka run WITHOUT TLS or
+# authentication in this setup, so they must never be exposed to an untrusted network).
+
+x-app-environment: &app-environment          # shared by migrate / api / consumer
+  APP_ENV: ${APP_ENV:-development}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  # Containers reach the services by name on the compose network (NOT the host ports). POSTGRES_PASSWORD must be URL-safe
+  # (e.g. `openssl rand -hex 24`) because it is embedded in this URL.
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-predictive_maintenance}
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  KAFKA_SENSOR_TOPIC: ${KAFKA_SENSOR_TOPIC:-sensor-readings}
+  KAFKA_PREDICTION_TOPIC: ${KAFKA_PREDICTION_TOPIC:-predictions}
+  KAFKA_ALERT_TOPIC: ${KAFKA_ALERT_TOPIC:-alerts}
+  KAFKA_DLQ_TOPIC: ${KAFKA_DLQ_TOPIC:-sensor-readings.dlq}
+  KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-prediction-service}
+
+x-app-hardening: &app-hardening              # no root, no extra privileges, read-only root filesystem
+  image: predictive-maintenance:local
+  build: {context: ., dockerfile: Dockerfile}
+  init: true                                 # tini as PID 1: forwards SIGTERM, reaps zombies
+  read_only: true
+  tmpfs: ["/tmp"]
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+
 services:
   postgres:
     image: postgres:16
@@ -8,7 +38,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-predictive_maintenance}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-    ports: ["127.0.0.1:5433:5432"]
+    # Host port 5433 (not 5432) so it does not clash with a PostgreSQL installed on your machine. Loopback only.
+    ports: ["${POSTGRES_BIND_ADDR:-127.0.0.1}:${POSTGRES_HOST_PORT:-5433}:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-predictive_maintenance}"]
@@ -26,12 +57,14 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.6.1
     depends_on: [zookeeper]
-    ports: ["9092:9092"]
+    ports: ["${KAFKA_BIND_ADDR:-127.0.0.1}:9092:9092"]          # loopback only by default
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      # Host clients (producer, your venv) use localhost:9092. For access from another machine you must ALSO set
+      # KAFKA_EXTERNAL_HOST to an address those clients can resolve (and bind KAFKA_BIND_ADDR accordingly).
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://${KAFKA_EXTERNAL_HOST:-localhost}:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -45,7 +78,7 @@ services:
       timeout: 10s
       retries: 20
 
-  kafka-init:                       # creates the three topics, then exits
+  kafka-init:                       # creates the topics (idempotent), then exits
     image: confluentinc/cp-kafka:7.6.1
     depends_on:
       kafka: {condition: service_healthy}
@@ -53,9 +86,65 @@ services:
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        for t in sensor-readings predictions alerts; do
+        for t in sensor-readings predictions alerts sensor-readings.dlq; do
           kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic $$t --partitions 3 --replication-factor 1
         done
+
+  # ----------------------------------------------------------------------------------------- application (profile "app")
+  migrate:                          # one-shot: alembic upgrade head (additive migrations only; never drops data)
+    <<: *app-hardening
+    profiles: ["app"]
+    command: ["alembic", "upgrade", "head"]
+    environment: *app-environment
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+
+  api:
+    <<: *app-hardening
+    profiles: ["app"]
+    environment:
+      <<: *app-environment
+      # Empty -> the API refuses to start with a clear error (JWT_SECRET is not set). Not ":?" so that the DEFAULT
+      # `docker compose up -d` (no app profile) keeps working with an older .env.
+      JWT_SECRET: ${JWT_SECRET:-}
+      ENABLE_DOCS: ${ENABLE_DOCS:-}              # empty = default (on, except APP_ENV=production)
+      READINESS_CHECK_KAFKA: "true"
+    ports: ["${API_BIND_ADDR:-127.0.0.1}:${API_PORT:-8000}:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    healthcheck:                                  # liveness (/health); readiness is GET /ready
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 30s                        # uvicorn drains requests for up to 20 s
+
+  consumer:
+    <<: *app-hardening
+    profiles: ["app"]
+    command: ["python", "-m", "streaming.db_consumer"]
+    environment:
+      <<: *app-environment
+      CONSUMER_METRICS_ADDR: "127.0.0.1"          # loopback INSIDE the container: not reachable from other containers or the host
+      CONSUMER_METRICS_PORT: "9101"
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      migrate: {condition: service_completed_successfully}
+    healthcheck:                                  # poll loop heartbeat (503 when stalled for > 60 s)
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9101/healthz', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped                       # the consumer deliberately EXITS (code 5) when it cannot persist / dead-letter
+    stop_grace_period: 45s                        # SIGTERM -> finishes the in-flight message, closes Kafka cleanly
 
 volumes:
   pgdata:

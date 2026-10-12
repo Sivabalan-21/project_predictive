@@ -3,6 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from api.auth import require_operator
 from api.dependencies import PageParams, get_alert_service, get_session
 from api.schemas import AlertOut, ErrorBody, Item, Page, Pagination
 from services.alert_service import AlertService
@@ -28,7 +29,7 @@ def list_active_alerts(p: PageParams = Depends(), session: Session = Depends(get
     return _page(rows, total, p)
 
 
-@router.post("/{alert_id}/resolve", response_model=Item[AlertOut],
+@router.post("/{alert_id}/resolve", response_model=Item[AlertOut], dependencies=[Depends(require_operator)],
              responses={404: {"model": ErrorBody}, 409: {"model": ErrorBody}})
 def resolve_alert(alert_id: int, session: Session = Depends(get_session), svc: AlertService = Depends(get_alert_service)):
     return Item[AlertOut](data=svc.resolve(session, alert_id))

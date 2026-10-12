@@ -85,3 +85,10 @@ def make_event(machine_id="M001", ts="2026-10-08T10:30:00Z", values=None, event_
     from streaming.schemas import SensorEvent
     return SensorEvent.from_dict({"machine_id": machine_id, "timestamp": ts, **(values or NORMAL),
                                   **({"event_id": event_id} if event_id else {})})
+
+
+def auth_headers(role: str = "viewer", user_id: int = 1) -> dict[str, str]:
+    """``Authorization`` header with a valid token for ``role`` (tokens are stateless: no user row is needed)."""
+    from auth.security import create_access_token
+    token, _ = create_access_token(user_id, role, os.environ["JWT_SECRET"])
+    return {"Authorization": f"Bearer {token}"}

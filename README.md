@@ -59,7 +59,7 @@ Sensor simulator -> Kafka producer -> topic machine-sensor-data -> Kafka consume
 The sensor data is **simulated** (synthetic, modelled on AI4I 2020), not real industrial data. The consumer contains no ML code: it calls the
 Phase 1 `PredictionService`. Full details, schemas, example messages, troubleshooting and limitations: `docs/streaming.md`.
 
-You need a Kafka-compatible broker on `localhost:9092` (see `docs/streaming.md`; Docker Compose arrives in Phase 6).
+You need a Kafka-compatible broker on `localhost:9092` (see `docs/streaming.md`; a Docker Compose file is provided, see Phase 3 and 4 below).
 
 Run (terminal 1, consumer first):
 ```powershell
@@ -82,3 +82,10 @@ Production-style pipeline: sensor events -> Kafka -> consumer -> `PredictionServ
 Quick start: `copy .env.example .env`, `docker compose up -d`, `alembic upgrade head`, `python -m streaming.db_consumer`,
 `uvicorn api.main:create_app --factory`. Full documentation, failure semantics and limitations: [docs/architecture.md](docs/architecture.md).
 Streamlit/Flask apps and the Phase 2 consumer keep working unchanged.
+
+## Phase 4: security, reliability and operations
+JWT authentication with `viewer` / `operator` / `admin` roles ([docs/auth.md](docs/auth.md)); a dead-letter topic `sensor-readings.dlq` and bounded
+publish retries - delivery is **not** exactly-once and downstream events can still be lost until an outbox exists ([docs/kafka.md](docs/kafka.md));
+structured JSON logs, request ids and Prometheus metrics ([docs/observability.md](docs/observability.md)); Dockerfile and a Compose `app` profile
+([docs/docker.md](docs/docker.md)). New configuration (`APP_ENV`, `ENABLE_DOCS`, `JWT_SECRET`, `KAFKA_DLQ_TOPIC`, ...): `.env.example`.
+Upgrading an existing Phase 3 database: `alembic upgrade head` (adds one table, `users`; no existing data is touched), then create users with `python -m auth.cli`.

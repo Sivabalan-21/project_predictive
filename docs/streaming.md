@@ -124,7 +124,7 @@ in-flight messages. Delivery is acks=all and at-least-once, so a retry can dupli
 `python -m streaming.consumer` subscribes to `machine-sensor-data` (group `prediction-service`), validates every message, calls
 `PredictionService.predict()`, logs the result and publishes a `PredictionEvent` to `machine-predictions`. Offsets are committed **after** the
 predictions of the messages read so far were flushed (at-least-once: a crash re-processes, never skips). A message that fails validation or
-prediction is logged, counted and skipped so one bad message cannot block the stream (a dead-letter topic is a future improvement).
+prediction is logged, counted and skipped so one bad message cannot block the stream (the Phase 2 consumer has no dead-letter topic; the Phase 3/4 persisting consumer does - see [kafka.md](kafka.md)).
 `--idle-timeout` counts from partition assignment. Exit codes: 0 ok, 2 bad configuration, 3 broker unreachable, 4 model artifacts missing.
 
 ## How to run
@@ -205,7 +205,7 @@ Unit tests need no broker: `python -m pytest tests -q`. Real-broker tests (skipp
 * At-least-once delivery: duplicates are possible; treat (`machine_id`, `timestamp`) as the identity of a reading in Phase 3.
 * The consumer predicts one message at a time: about 70 ms per message on one CPU (a fixed per-call cost of the three 300-tree models), so roughly 14 msg/s.
   Measured with `predict_many`: 50 readings in 65 ms, i.e. 1.3 ms per reading. Micro-batching is the obvious next optimisation.
-* Messages that fail validation or prediction are skipped (no dead-letter topic yet).
+* Messages that fail validation or prediction are skipped by *this* Phase 2 consumer (no dead-letter topic). `streaming.db_consumer` dead-letters them: see [kafka.md](kafka.md).
 * Machines are hashed onto 3 partitions (observed split 1/3/1 machines), so the load is uneven.
 * Simulated data only; TWF and RNF failures are mostly not detected by the model (see the table above).
 * No schema registry; the schema is enforced in code by the producer and consumer.

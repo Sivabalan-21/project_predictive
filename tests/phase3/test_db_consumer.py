@@ -96,7 +96,9 @@ def test_duplicate_is_skipped_without_publishing_but_offset_is_committed():
 def test_unpredictable_message_is_skipped_and_committed():
     c, cons, prod, ing, *_ = build([msg(payload(), 2)], [PredictionError("bad")])
     c.run(max_messages=1)
-    assert cons.committed == [2] and c.stats.prediction_errors == 1 and prod.sent == []
+    assert cons.committed == [2] and c.stats.prediction_errors == 1
+    # Phase 4: it is no longer dropped silently - nothing reaches predictions/alerts, exactly one message goes to the DLQ
+    assert [t for t, *_ in prod.sent] == [SETTINGS.dlq_topic] and c.stats.dead_lettered == 1
 
 
 def test_publish_failure_is_logged_but_does_not_lose_the_db_row(caplog):

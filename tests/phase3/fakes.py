@@ -21,12 +21,13 @@ class RecordingConsumer:
 class RecordingProducer:
     def __init__(self, events, fail=False):
         self.events, self.sent, self.fail = events, [], fail
+        self.sent_headers = []
 
-    def produce(self, topic, key=None, value=None, on_delivery=None):
+    def produce(self, topic, key=None, value=None, on_delivery=None, headers=None):
         from confluent_kafka import KafkaException, KafkaError
         if self.fail:
             raise KafkaException(KafkaError(KafkaError._MSG_TIMED_OUT))
-        self.sent.append((topic, key, value)); self.events.append(("publish", topic))
+        self.sent.append((topic, key, value)); self.sent_headers.append(headers); self.events.append(("publish", topic))
         if on_delivery: on_delivery(None, None)
 
     def poll(self, t=0): return 0

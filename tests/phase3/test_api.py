@@ -6,14 +6,15 @@ from sqlalchemy.orm import sessionmaker
 
 from api.main import create_app
 from services.ingestion_service import IngestionService
-from tests.phase3.conftest import NORMAL, OVERSTRAIN, make_event
+from tests.phase3.conftest import NORMAL, OVERSTRAIN, auth_headers, make_event
 
 pg = [pytest.mark.integration, pytest.mark.postgres]
 
 
 @pytest.fixture()
 def client(session_factory):
-    return TestClient(create_app(session_factory=session_factory, kafka_check=None))
+    # Phase 4: /api/v1 needs a bearer token. "operator" is a superset of "viewer" (these tests also resolve alerts).
+    return TestClient(create_app(session_factory=session_factory, kafka_check=None), headers=auth_headers("operator"))
 
 
 @pytest.fixture()
@@ -39,7 +40,7 @@ def test_ready_fails_with_503_when_database_unavailable():
 
 def test_data_endpoints_return_503_not_500_when_database_unavailable():
     bad = sessionmaker(bind=create_engine("postgresql+psycopg://u:p@127.0.0.1:1/db", connect_args={"connect_timeout": 1}))
-    r = TestClient(create_app(session_factory=bad, kafka_check=None)).get("/api/v1/predictions")
+    r = TestClient(create_app(session_factory=bad, kafka_check=None), headers=auth_headers("viewer")).get("/api/v1/predictions")
     assert r.status_code == 503 and r.json()["error"] == "service_unavailable"
 
 

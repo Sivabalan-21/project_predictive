@@ -53,9 +53,18 @@ class Item(BaseModel, Generic[T]):
     data: T
 
 
+class FieldError(BaseModel):
+    field: str          # e.g. "query.page" or "path.machine_id"
+    message: str
+    type: str
+
+
 class ErrorBody(BaseModel):
+    """Every error response has this shape. ``errors`` is present only for validation errors (HTTP 422).
+    Submitted values are never echoed back."""
     error: str
     detail: str
+    errors: list[FieldError] | None = None
 
 
 class HealthOut(BaseModel):
