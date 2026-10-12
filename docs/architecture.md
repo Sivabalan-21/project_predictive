@@ -63,17 +63,17 @@ no new alert is created (the existing one is left unchanged). Resolve it with `P
 ## Failure handling
 | Situation | Behaviour |
 |---|---|
-| Malformed / out-of-range message | logged with payload preview, skipped, offset committed |
+| Malformed / out-of-range message | logged with payload preview, **published to the dead-letter topic** (original bytes + reason/source headers, confirmed delivery, bounded retries), then offset committed; if the DLQ publish fails the consumer stops without committing (see [kafka.md](kafka.md)) |
 | Duplicate event | skipped, no downstream re-publish, offset committed |
-| `PredictionService` raises | transaction rolled back, logged, skipped, offset committed (cannot succeed on retry) |
+| `PredictionService` raises | transaction rolled back, logged, **dead-lettered** like an invalid message, then offset committed |
 | DB connection error | retried with exponential backoff (`--db-retries`); if it persists the consumer stops with exit code 5 **without committing**, so the message is redelivered after restart |
 | Non-retryable DB error (integrity/data) | consumer stops (exit 5) without committing - never silently skipped |
-| Kafka publish to predictions/alerts fails | logged + counted; DB is source of truth; offset still committed (see limitations) |
+| Kafka publish to predictions/alerts fails | retried a bounded number of times (`--publish-retries`), then logged + counted as failed; DB is source of truth; offset still committed - the downstream event may be lost (see limitations) |
 | Missing/invalid `DATABASE_URL`, non-PostgreSQL URL | exit code 2 at startup |
 | Broker unreachable at startup / models missing | exit code 3 / 4 |
 
 ## Known limitations
-* Downstream publishing happens after the DB commit, not atomically with it (no outbox). A crash between COMMIT and publish, or a publish that fails, loses that downstream event while the DB row exists; the redelivered message is a duplicate and is not re-published. An outbox table is the standard fix (future work).
+* Downstream publishing happens after the DB commit, not atomically with it (**the outbox pattern is deferred to a future phase**). Phase 4 added bounded retries and failure metrics, but a crash between COMMIT and publish, or retries that are exhausted, still loses that downstream event while the DB row exists; the redelivered message is a duplicate and is not re-published. The delivery is **not** exactly-once and not fully reliable. Details: [kafka.md](kafka.md).
 * `PredictionService` runs inside the open DB transaction (a few ms); acceptable at this scale.
 * The producer does not yet assign `event_id`s; idempotency relies on `(machine_id, timestamp)`.
 * Single-node local Kafka (replication factor 1).
@@ -83,26 +83,31 @@ no new alert is created (the existing one is left unchanged). Resolve it with `P
 copy .env.example .env            # edit POSTGRES_PASSWORD and DATABASE_URL to match
 docker compose up -d
 docker compose ps
-alembic upgrade head
+alembic upgrade head                                   # applies 0001 (schema) and 0002 (users)
+python -m auth.cli create-user --username alice --role operator   # prompts for the password
 python -m streaming.db_consumer                        # terminal 1
 python -m streaming.producer                           # terminal 2 (see docs/streaming.md for options)
 uvicorn api.main:create_app --factory --port 8000      # terminal 3
-# http://localhost:8000/docs
+# http://localhost:8000/docs   (with APP_ENV=production docs are off unless ENABLE_DOCS=true)
 docker compose logs kafka ; docker compose logs postgres
 docker compose down            # add -v to also delete the data volumes
 ```
 
+## Phase 4 additions
+Authentication and roles: [auth.md](auth.md). Dead-letter topic, delivery behaviour, limitations: [kafka.md](kafka.md). Logging, request ids, metrics: [observability.md](observability.md). Containers: [docker.md](docker.md).
+
 ## API
+Every `/api/v1` endpoint except `POST /api/v1/auth/login` needs `Authorization: Bearer <token>` (viewer: GETs, operator: + resolve, admin: reserved); `/health`, `/ready`, `/metrics` are public.
 `GET /health`, `GET /ready` (503 if PostgreSQL or Kafka unavailable), `GET /api/v1/predictions`, `GET /api/v1/predictions/{id}`,
 `GET /api/v1/machines/{machine_id}/predictions`, `GET /api/v1/alerts[?status=]`, `GET /api/v1/alerts/active`,
 `GET /api/v1/machines/{machine_id}/alerts`, `POST /api/v1/alerts/{id}/resolve` (404 unknown, 409 already resolved).
-List endpoints: `?page=1&page_size=50` (max 200) -> `{"data": [...], "pagination": {"page","page_size","total"}}`. Errors: `{"error","detail"}`; bad input -> 422; DB down -> 503.
+List endpoints: `?page=1&page_size=50` (max 200) -> `{"data": [...], "pagination": {"page","page_size","total"}}`. Errors: `{"error","detail"}`; bad input -> 422 with `{"error":"validation_error","detail","errors":[{"field","message","type"}]}` (submitted values are never echoed; `machine_id` must match `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`); 401/403 auth; DB down -> 503.
 
 ## Testing
 | Kind | Command | Needs |
 |---|---|---|
 | Unit + Phase 2 regression | `python -m pytest -q` | nothing |
-| PostgreSQL integration (`-m postgres`) | included in the line above when `TEST_DATABASE_URL` (admin URL, e.g. `postgresql+psycopg://postgres:PW@localhost:5432/postgres`) or the `pgserver` package is available; otherwise skipped | real PostgreSQL |
+| PostgreSQL integration (`-m postgres`) | included in the line above when `TEST_DATABASE_URL` (admin URL, e.g. `postgresql+psycopg://postgres:PW@localhost:5433/postgres`) or the `pgserver` package is available; otherwise skipped | real PostgreSQL |
 | Kafka integration (Phase 2) | `$env:RUN_KAFKA_INTEGRATION="1"; python -m pytest tests/test_kafka_integration.py -q` | running broker |
 | Kafka + PostgreSQL end-to-end | `$env:RUN_KAFKA_INTEGRATION="1"; $env:TEST_DATABASE_URL="..."; python -m pytest tests/phase3/test_e2e_kafka_postgres.py -v` | broker + PostgreSQL |
 

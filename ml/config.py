@@ -37,6 +37,7 @@ DEFAULT_KAFKA_BOOTSTRAP = "localhost:9092"
 DEFAULT_SENSOR_TOPIC = "machine-sensor-data"
 DEFAULT_PREDICTION_TOPIC = "machine-predictions"
 DEFAULT_ALERT_TOPIC = "alerts"
+DEFAULT_DLQ_TOPIC = "sensor-readings.dlq"
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ class KafkaSettings:
       KAFKA_SENSOR_TOPIC        raw sensor events        (default machine-sensor-data)
       KAFKA_PREDICTION_TOPIC    prediction events        (default machine-predictions)
       KAFKA_ALERT_TOPIC         alert events (Phase 3)   (default alerts)
+      KAFKA_DLQ_TOPIC           dead-letter topic (Phase 4; persisting consumer only)  (default sensor-readings.dlq)
       KAFKA_CONSUMER_GROUP      consumer group id        (default prediction-service)
       KAFKA_AUTO_OFFSET_RESET   earliest | latest        (default earliest)
       KAFKA_TOPIC_PARTITIONS    partitions when a topic is auto-created (default 3)
@@ -59,6 +61,7 @@ class KafkaSettings:
     auto_offset_reset: str = "earliest"
     topic_partitions: int = 3
     alert_topic: str = DEFAULT_ALERT_TOPIC
+    dlq_topic: str = DEFAULT_DLQ_TOPIC
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "KafkaSettings":
@@ -71,18 +74,22 @@ class KafkaSettings:
             auto_offset_reset=env.get("KAFKA_AUTO_OFFSET_RESET", cls.auto_offset_reset).strip().lower(),
             topic_partitions=_int_env(env, "KAFKA_TOPIC_PARTITIONS", cls.topic_partitions),
             alert_topic=env.get("KAFKA_ALERT_TOPIC", cls.alert_topic).strip(),
+            dlq_topic=env.get("KAFKA_DLQ_TOPIC", cls.dlq_topic).strip(),
         )
         settings.validate()
         return settings
 
     def validate(self) -> None:
-        for name in ("bootstrap_servers", "sensor_topic", "prediction_topic", "consumer_group", "alert_topic"):
+        for name in ("bootstrap_servers", "sensor_topic", "prediction_topic", "consumer_group", "alert_topic", "dlq_topic"):
             if not getattr(self, name):
                 raise ValueError(f"Kafka setting {name!r} must not be empty")
         if self.sensor_topic == self.prediction_topic:
             raise ValueError("KAFKA_SENSOR_TOPIC and KAFKA_PREDICTION_TOPIC must be different topics")
         if len({self.sensor_topic, self.prediction_topic, self.alert_topic}) != 3:
             raise ValueError("sensor, prediction and alert topics must all be different")
+        if self.dlq_topic in (self.sensor_topic, self.prediction_topic, self.alert_topic):
+            raise ValueError("KAFKA_DLQ_TOPIC must differ from the sensor, prediction and alert topics "
+                             "(a dead-letter topic that is also the input topic would loop forever)")
         if self.auto_offset_reset not in ("earliest", "latest"):
             raise ValueError("KAFKA_AUTO_OFFSET_RESET must be 'earliest' or 'latest'")
         if self.topic_partitions < 1:

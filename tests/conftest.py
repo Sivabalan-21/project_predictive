@@ -1,7 +1,13 @@
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+# Phase 4: the API refuses to start without a valid JWT secret. A fixed, clearly-fake test secret (>= 32 chars).
+TEST_JWT_SECRET = "unit-test-secret-not-for-production-0123456789"
+os.environ.setdefault("JWT_SECRET", TEST_JWT_SECRET)
+os.environ.setdefault("APP_ENV", "test")
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
