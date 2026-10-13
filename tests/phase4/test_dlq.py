@@ -180,32 +180,29 @@ def test_dlq_timeout_without_report_is_not_treated_as_success():
     assert c.stats.dlq_retries == 1
 
 
-# =============================================================================================== bounded downstream retries
-def test_failed_downstream_event_is_retried_only_for_the_failed_event():
-    plan = lambda t, n: "fail" if (t == SETTINGS.prediction_topic and n <= 2) else "ok"
-    c, cons, prod, ing, events, sleeps = build([kmsg(payload(OVERSTRAIN), 4)], [outcome(alert=True)], plan=plan)
+# =============================================================================================== committed outbox boundary
+def test_valid_downstream_messages_are_not_directly_published_by_the_consumer():
+    """Phase 5: source offsets move after the durable DB/outbox transaction, not a notification publish."""
+    c, cons, prod, ing, events, sleeps = build([kmsg(payload(OVERSTRAIN), 4)], [outcome(alert=True)])
     c.run(max_messages=1)
-    assert len(prod.to(SETTINGS.prediction_topic)) == 3 and len(prod.to(SETTINGS.alert_topic)) == 1
-    assert c.stats.publish_retries == 2 and c.stats.publish_errors == 0 and c.stats.published == 2
-    assert sleeps == [0.5, 1.0] and cons.committed == [4]
-    assert events.index(("offset_commit", 4)) > max(i for i, e in enumerate(events) if e[0] == "produce")
+    assert prod.calls == [] and c.stats.publish_retries == 0 and c.stats.publish_errors == 0
+    assert cons.committed == [4] and c.stats.persisted == 1
+    assert events[:2] == [("db_commit",), ("offset_commit", 4)]
 
 
 @pytest.mark.parametrize("mode", ["fail", "raise", "buffer", "timeout"])
-def test_exhausted_downstream_retries_are_counted_logged_and_offset_still_committed(mode, caplog):
-    c, cons, prod, ing, events, sleeps = build([kmsg(payload(OVERSTRAIN), 8)], [outcome(alert=True)],
-                                               plan=lambda t, n: mode, publish_retries=2)
+def test_downstream_producer_failure_modes_do_not_change_consumer_offset_safety(mode):
+    """Retry and permanent-failure handling belongs to OutboxDispatcher; this producer remains DLQ-only here."""
+    c, cons, prod, *_ = build([kmsg(payload(OVERSTRAIN), 8)], [outcome(alert=True)], plan=lambda t, n: mode)
     c.run(max_messages=1)
-    assert len(prod.calls) == 6 and c.stats.publish_errors == 2 and c.stats.published == 0   # (1+2) attempts x 2 events
-    assert c.stats.publish_retries == 4 and sleeps == [0.5, 1.0]
-    assert cons.committed == [8] and c.stats.persisted == 1                                   # DB row is kept; offset moves on
-    assert "could not publish" in caplog.text and "LOST" in caplog.text
+    assert prod.calls == [] and cons.committed == [8] and c.stats.persisted == 1
 
 
-def test_zero_publish_retries_means_a_single_attempt():
+def test_consumer_publish_retry_option_does_not_reintroduce_direct_downstream_delivery():
     c, cons, prod, *_ = build([kmsg(payload(), 1)], [outcome()], plan=lambda t, n: "fail", publish_retries=0)
     c.run(max_messages=1)
-    assert len(prod.calls) == 1 and c.stats.publish_retries == 0 and c.stats.publish_errors == 1
+    assert prod.calls == [] and c.stats.publish_retries == 0 and c.stats.publish_errors == 0
+    assert cons.committed == [1]
 
 
 def test_duplicates_are_never_republished():

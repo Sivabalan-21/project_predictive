@@ -67,7 +67,7 @@ def engine(migrated_url):
 @pytest.fixture()
 def session_factory(engine):
     with engine.begin() as c:
-        c.execute(text("TRUNCATE alerts, predictions, sensor_readings RESTART IDENTITY CASCADE"))
+        c.execute(text("TRUNCATE outbox_events, alerts, predictions, sensor_readings RESTART IDENTITY CASCADE"))
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 

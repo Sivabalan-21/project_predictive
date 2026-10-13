@@ -47,11 +47,11 @@ def op_err():
     return OperationalError("INSERT", {}, Exception("connection refused"))
 
 
-def test_offset_is_committed_only_after_db_commit_and_downstream_publish():
+def test_offset_is_committed_after_durable_db_commit_without_waiting_for_outbox_dispatch():
     c, cons, prod, ing, events, _ = build([msg(payload(OVERSTRAIN), 5)], [outcome(alert=True)])
     c.run(max_messages=1)
-    assert events[:5] == [("db_commit",), ("publish", "predictions"), ("publish", "alerts"), ("flush",), ("offset_commit", 5)]
-    assert [t for t, *_ in prod.sent] == ["predictions", "alerts"] and all(k == b"M001" for _, k, _ in prod.sent)
+    assert events[:2] == [("db_commit",), ("offset_commit", 5)]
+    assert prod.sent == []
     assert c.stats.persisted == 1 and c.stats.alerts_created == 1
 
 
@@ -101,10 +101,10 @@ def test_unpredictable_message_is_skipped_and_committed():
     assert [t for t, *_ in prod.sent] == [SETTINGS.dlq_topic] and c.stats.dead_lettered == 1
 
 
-def test_publish_failure_is_logged_but_does_not_lose_the_db_row(caplog):
-    c, cons, *_ = build([msg(payload(), 2)], [outcome()], producer_fail=True)
+def test_downstream_producer_is_not_used_by_the_input_consumer(caplog):
+    c, cons, prod, *_ = build([msg(payload(), 2)], [outcome()], producer_fail=True)
     c.run(max_messages=1)
-    assert c.stats.publish_errors >= 1 and cons.committed == [2] and "could not publish" in caplog.text
+    assert c.stats.publish_errors == 0 and cons.committed == [2] and prod.sent == []
 
 
 def test_consumer_closed_on_halt():
@@ -154,6 +154,6 @@ def test_redelivered_messages_are_idempotent_end_to_end_with_fake_kafka(session_
     c = PersistingSensorConsumer(SETTINGS, IngestionService(session_factory, predictor), consumer=cons, producer=prod)
     c.run(max_messages=3)
     assert c.stats.persisted == 1 and c.stats.duplicates == 2 and cons.committed == [0, 1, 2]
-    assert [t for t, *_ in prod.sent] == ["predictions", "alerts"]     # downstream published once
+    assert prod.sent == []     # durable outbox intents are dispatched by the separate relay
     with session_factory() as s:
         assert [s.execute(text(f"SELECT count(*) FROM {t}")).scalar_one() for t in ("sensor_readings", "predictions", "alerts")] == [1, 1, 1]

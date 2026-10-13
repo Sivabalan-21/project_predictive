@@ -34,13 +34,16 @@ Binding to a non-loopback address is possible but is logged as a warning; the en
 | `consumer_dlq_messages_total` | `reason` = `invalid_schema`/`prediction_failed` | confirmed dead-letter publishes |
 | `consumer_dlq_publish_retries_total`, `consumer_dlq_publish_failures_total` | - | DLQ retries; DLQ failures after all retries (the consumer then halts) |
 | `consumer_db_retries_total` | - | transient database errors retried |
-| `consumer_downstream_events_total` | `kind` = `prediction`/`alert`, `result` = `success`/`failure` | after bounded retries; `failure` = the event was **not** published (may be lost, see kafka.md) |
-| `consumer_downstream_publish_retries_total` | - | downstream retries |
 | `consumer_alerts_created_total`, `consumer_offsets_committed_total` | - | |
 | `consumer_last_heartbeat_timestamp_seconds` | - | unix time of the last poll-loop iteration |
 
-Suggested alerts: `increase(consumer_downstream_events_total{result="failure"}[15m]) > 0`, `increase(consumer_dlq_messages_total[15m]) > 0`,
+Suggested alerts: `increase(consumer_dlq_messages_total[15m]) > 0`,
 `increase(consumer_dlq_publish_failures_total[5m]) > 0`, `time() - consumer_last_heartbeat_timestamp_seconds > 120`.
+
+### Outbox dispatcher
+`streaming.outbox_dispatcher` uses its own process registry. `outbox_events_pending` and `outbox_oldest_pending_age_seconds` show the backlog;
+`outbox_publications_total{kind,result}`, `outbox_retries_total`, and `outbox_permanent_failures_total{kind}` show relay outcomes. Alert on any
+permanent failure and on an oldest pending age above the delivery SLO; neither metric proves downstream business processing.
 
 ## Single-worker assumption (and what multiprocess deployment would need)
 The API is meant to run as **one uvicorn worker** (the shipped Dockerfile/Compose do), and the consumer as **one process per container**. In-memory registries are

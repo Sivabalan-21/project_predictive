@@ -20,7 +20,8 @@ factor 1 - single-broker local defaults).
 ## What happens to each message
 
 ```
-poll -> validate -> [ DB transaction: reading + prediction + alert ] COMMIT -> publish predictions/alerts -> commit offset
+poll -> validate -> [ DB transaction: reading + prediction + alert + outbox intents ] COMMIT -> commit offset
+                                                                         -> dispatcher publishes predictions/alerts
             |                      |
             |                      +-- DB unavailable ... retried, then HALT (offset not committed)
             +-- invalid / un-predictable -> publish ORIGINAL bytes to the DLQ (confirmed) -> commit offset
@@ -29,14 +30,13 @@ poll -> validate -> [ DB transaction: reading + prediction + alert ] COMMIT -> p
 
 | Situation | Behaviour | Offset |
 |---|---|---|
-| Valid, new | persisted, predictions/alerts published (bounded retries) | committed after publishing |
+| Valid, new | reading, prediction/alert, and durable outbox intent committed together | committed after that transaction |
 | Valid, duplicate (same `machine_id`+`timestamp`, or `event_id`) | nothing written, nothing re-published | committed |
 | Invalid JSON / schema / out-of-range value / undecodable bytes / tombstone | **dead-lettered** (`dlq.reason=invalid_schema`) | committed **only after** the DLQ publish is confirmed |
 | `PredictionService` raises on a schema-valid event | transaction rolled back, **dead-lettered** (`dlq.reason=prediction_failed`) | committed **only after** the DLQ publish is confirmed |
 | Database connection error | retried with exponential backoff (`--db-retries`, default 3); then the consumer **stops** (exit 5) | **not** committed; redelivered after restart |
 | Non-retryable database error (integrity/data) | consumer stops (exit 5) - never skipped silently | **not** committed |
 | DLQ publish not confirmed after `--dlq-retries` (default 3) retries | consumer **stops** (exit 5) | **not** committed |
-| predictions/alerts publish not confirmed after `--publish-retries` (default 3) retries | logged as `LOST`, counted (`consumer_downstream_events_total{result="failure"}`); processing continues | committed (the data is in PostgreSQL) |
 
 Exit codes: `2` bad configuration, `3` Kafka unreachable at start-up, `4` model artifacts missing, `5` halted (database or DLQ could not
 take a message; the container restarts and the same message is retried).
@@ -65,19 +65,15 @@ take a message; the container restarts and the same message is retried).
 
 ## Known limitations (read before relying on this in production)
 
-* **Downstream events can be lost.** `predictions` and `alerts` are published **after** the database commit and **not atomically with
-  it** (the outbox pattern is deferred to a future phase). If the process crashes after the commit but before the broker confirms the
-  publish, or if all bounded retries fail, the row exists in PostgreSQL but the downstream event is never sent - and the redelivered
-  source message is then recognised as a duplicate and is **not** re-published. PostgreSQL is the source of truth; treat the topics as
-  best-effort notifications, and reconcile from the database if completeness matters.
-* **Not exactly-once.** From the producer to the database the pipeline is **at-least-once** (a redelivered message is made harmless by the
-  unique constraints). For the `predictions`/`alerts` topics it is **best-effort with bounded retries**: an event can be lost (see above)
-  *and* can be delivered twice (a retry after a delivery report was lost). Do not describe this system as "reliable delivery" or "exactly-once".
+* **At-least-once, not exactly-once.** The transaction also creates `outbox_events`; `streaming.outbox_dispatcher` records `DELIVERED`
+  only after a confirmed Kafka delivery. If it crashes after Kafka accepts the record but before that database update, the expired lease
+  is retried and the output can be delivered twice. It cannot make PostgreSQL and Kafka a single atomic commit. Downstream consumers
+  must deduplicate the stable `event_id` Kafka header where they have side effects.
 * A halted consumer blocks its partition(s) until the database/DLQ recovers (by design: no message is skipped).
 * Retries are in-process and short (seconds). They are not a substitute for broker/database availability.
 * Single-node local Kafka (replication factor 1), no TLS, no authentication in the shipped Compose setup.
 * The producer does not assign `event_id`s; idempotency relies on `(machine_id, timestamp)`.
 * The Phase 2 consumer has no DLQ.
 
-## Future work
-Outbox table written in the same transaction as the reading (publisher process relays it), a DLQ replay tool, schema registry.
+## Operations
+See [operations-runbook.md](operations-runbook.md) for backlog inspection, failed-event recovery, and safe DLQ replay.

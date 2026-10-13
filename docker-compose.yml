@@ -146,6 +146,30 @@ services:
     restart: unless-stopped                       # the consumer deliberately EXITS (code 5) when it cannot persist / dead-letter
     stop_grace_period: 45s                        # SIGTERM -> finishes the in-flight message, closes Kafka cleanly
 
+
+  outbox-dispatcher:
+    <<: *app-hardening
+    profiles: ["app"]
+    command: ["python", "-m", "streaming.outbox_dispatcher"]
+    environment:
+      <<: *app-environment
+      OUTBOX_METRICS_ADDR: "127.0.0.1"
+      OUTBOX_METRICS_PORT: "9102"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9102/healthz', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+
 volumes:
   pgdata:
   zkdata:

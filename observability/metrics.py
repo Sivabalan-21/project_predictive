@@ -83,14 +83,43 @@ class ConsumerMetrics:
         return time.time() - self.last_heartbeat._value.get()
 
 
+class OutboxMetrics:
+    """Metrics for the independent relay. Labels intentionally remain a small closed set."""
+    KINDS = ("prediction", "alert")
+
+    def __init__(self, registry: CollectorRegistry | None = None) -> None:
+        self.registry = registry or CollectorRegistry()
+        ProcessCollector(registry=self.registry)
+        r = self.registry
+        self.pending = Gauge("outbox_events_pending", "Outbox rows awaiting delivery or an active lease", registry=r)
+        self.oldest_age = Gauge("outbox_oldest_pending_age_seconds", "Age of oldest outstanding outbox event", registry=r)
+        self.publications = Counter("outbox_publications_total", "Kafka outbox delivery results", ["kind", "result"], registry=r)
+        self.retries = Counter("outbox_retries_total", "Outbox publication retry attempts", registry=r)
+        self.permanent_failures = Counter("outbox_permanent_failures_total", "Outbox events requiring operator recovery", ["kind"], registry=r)
+        self.last_heartbeat = Gauge("outbox_last_heartbeat_timestamp_seconds", "Unix time of last outbox dispatch loop", registry=r)
+        for kind in self.KINDS:
+            for result in ("success", "failure"):
+                self.publications.labels(kind=kind, result=result)
+            self.permanent_failures.labels(kind=kind)
+        self.heartbeat()
+
+    def heartbeat(self) -> None:
+        self.last_heartbeat.set(time.time())
+
+    def heartbeat_age_s(self) -> float:
+        return time.time() - self.last_heartbeat._value.get()
+
+
 class MetricsServer:
-    """Tiny HTTP server for the consumer: ``/metrics`` (Prometheus text) and ``/healthz`` (poll loop still alive).
+    """HTTP server for /metrics and /healthz, based on a worker heartbeat."""
 
-    Bound to ``127.0.0.1`` by default, so only processes in the same network namespace (the container's own health check, or a
-    sidecar) can reach it. Binding elsewhere is an explicit decision (``CONSUMER_METRICS_ADDR``) and is logged as a warning.
-    """
-
-    def __init__(self, metrics: ConsumerMetrics, host: str = "127.0.0.1", port: int = 9101, max_heartbeat_age_s: float = 60.0):
+    def __init__(
+        self,
+        metrics: ConsumerMetrics | OutboxMetrics,
+        host: str = "127.0.0.1",
+        port: int = 9101,
+        max_heartbeat_age_s: float = 60.0,
+    ):
         self.metrics, self.host, self._max_age = metrics, host, max_heartbeat_age_s
         if not ipaddress.ip_address(host).is_loopback:
             log.warning("consumer metrics endpoint bound to non-loopback address %s - make sure the network restricts access", host)

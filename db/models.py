@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import (BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, String, UniqueConstraint,
+from sqlalchemy import (BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, JSON, String, UniqueConstraint,
                         func, text)
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +11,7 @@ from db.base import Base
 
 ALERT_ACTIVE, ALERT_RESOLVED = "ACTIVE", "RESOLVED"
 USER_ROLES = ("viewer", "operator", "admin")
+OUTBOX_PENDING, OUTBOX_IN_FLIGHT, OUTBOX_DELIVERED, OUTBOX_FAILED = "PENDING", "IN_FLIGHT", "DELIVERED", "FAILED"
 
 
 class SensorReading(Base):
@@ -84,3 +85,29 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class OutboxEvent(Base):
+    """A Kafka publication intent, committed with its business records (at-least-once relay)."""
+    __tablename__ = "outbox_events"
+    __table_args__ = (
+        CheckConstraint("status IN ('PENDING','IN_FLIGHT','DELIVERED','FAILED')", name="outbox_status_values"),
+        CheckConstraint("attempt_count >= 0", name="outbox_attempt_count_nonnegative"),
+        Index("ix_outbox_events_dispatch", "status", "available_at", "created_at"),
+        Index("ix_outbox_events_lock", "status", "locked_at"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    topic: Mapped[str] = mapped_column(String(249), nullable=False)
+    message_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=OUTBOX_PENDING)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lock_owner: Mapped[str | None] = mapped_column(String(64))
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
