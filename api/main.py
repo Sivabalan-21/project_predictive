@@ -26,6 +26,7 @@ from db.session import make_engine, make_session_factory
 from ml.config import KafkaSettings
 from observability.metrics import ApiMetrics
 from services.errors import ConflictError, NotFoundError
+from services.login_rate_limiter import LoginRateLimiter
 from streaming.logging_setup import configure_logging
 
 log = logging.getLogger("api")
@@ -70,6 +71,7 @@ def create_app(session_factory: sessionmaker[Session] | None = None,
         kafka_check = _kafka_check(KafkaSettings.from_env()) if enabled else None
     app.state.kafka_check = kafka_check
     app.state.metrics = ApiMetrics()                            # per-app registry (never the global default)
+    app.state.login_rate_limiter = LoginRateLimiter(settings.login_rate_limit, settings.login_rate_window_seconds)
     if os.environ.get("PROMETHEUS_MULTIPROC_DIR") or int(os.environ.get("WEB_CONCURRENCY", "1") or 1) > 1:
         log.warning("metrics are per-process and this API is single-worker by design; with several workers /metrics is "
                     "inconsistent - see docs/observability.md")

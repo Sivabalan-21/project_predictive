@@ -17,7 +17,7 @@ def tables(url):
         eng.dispose()
 
 
-def test_0002_is_additive_and_downgrade_only_drops_users(scratch_db_url):
+def test_0002_to_0003_is_additive_and_downgrade_only_drops_outbox(scratch_db_url):
     cfg = alembic_config(scratch_db_url)
     command.upgrade(cfg, "0001")
     eng = create_engine(scratch_db_url)
@@ -31,25 +31,33 @@ def test_0002_is_additive_and_downgrade_only_drops_users(scratch_db_url):
     with eng.connect() as c:
         assert c.execute(text("SELECT count(*) FROM sensor_readings")).scalar_one() == 1          # untouched
 
-    command.downgrade(cfg, "0001")                            # rollback path
-    assert "users" not in tables(scratch_db_url) and {"sensor_readings", "predictions", "alerts"} <= tables(scratch_db_url)
+    command.upgrade(cfg, "0003")
+    assert {"users", "outbox_events", "sensor_readings", "predictions", "alerts"} <= tables(scratch_db_url)
+
+    command.downgrade(cfg, "0002")                            # 0003 rollback leaves Phase 4 data intact
+    assert "outbox_events" not in tables(scratch_db_url) and "users" in tables(scratch_db_url)
     with eng.connect() as c:
         assert c.execute(text("SELECT count(*) FROM sensor_readings")).scalar_one() == 1          # data survived
 
-    command.upgrade(cfg, "head")                              # and forward again
-    assert "users" in tables(scratch_db_url)
+    command.upgrade(cfg, "head")                              # and forward again through the current head
+    assert {"users", "outbox_events"} <= tables(scratch_db_url)
     eng.dispose()
 
 
-def test_head_is_0002_and_orm_matches_migration(migrated_url):
+def test_head_is_0003_and_users_orm_matches_final_migration(migrated_url):
     from alembic.script import ScriptDirectory
-    assert ScriptDirectory.from_config(alembic_config(migrated_url)).get_current_head() == "0002"
+    from db.models import User
+    assert ScriptDirectory.from_config(alembic_config(migrated_url)).get_current_head() == "0003"
     eng = create_engine(migrated_url)
     insp = inspect(eng)
     cols = {c["name"]: c for c in insp.get_columns("users")}
     assert set(cols) == {"id", "username", "password_hash", "role", "is_active", "created_at"}
     assert cols["password_hash"]["nullable"] is False and cols["is_active"]["nullable"] is False
     assert any(set(u["column_names"]) == {"username"} for u in insp.get_unique_constraints("users"))
+    assert set(User.__table__.columns.keys()) == set(cols)
+    assert {"id", "event_type", "schema_version", "topic", "message_key", "payload", "status", "attempt_count",
+            "available_at", "locked_at", "lock_owner", "last_error", "delivered_at", "created_at", "updated_at"} == {
+                c["name"] for c in insp.get_columns("outbox_events")}
     eng.dispose()
 
 

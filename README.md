@@ -89,3 +89,7 @@ publish retries - delivery is **not** exactly-once and downstream events can sti
 structured JSON logs, request ids and Prometheus metrics ([docs/observability.md](docs/observability.md)); Dockerfile and a Compose `app` profile
 ([docs/docker.md](docs/docker.md)). New configuration (`APP_ENV`, `ENABLE_DOCS`, `JWT_SECRET`, `KAFKA_DLQ_TOPIC`, ...): `.env.example`.
 Upgrading an existing Phase 3 database: `alembic upgrade head` (adds one table, `users`; no existing data is touched), then create users with `python -m auth.cli`.
+
+## Phase 5: durable publication
+
+`alembic upgrade head` now also applies `0003_transactional_outbox`: predictions and alerts are queued with their business rows and relayed by `streaming.outbox_dispatcher`. Start the application profile (`docker compose --profile app up -d --build`) to run it. Delivery is at-least-once; see [the operational runbook](docs/operations-runbook.md).

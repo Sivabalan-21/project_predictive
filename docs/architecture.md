@@ -73,7 +73,7 @@ no new alert is created (the existing one is left unchanged). Resolve it with `P
 | Broker unreachable at startup / models missing | exit code 3 / 4 |
 
 ## Known limitations
-* Downstream publishing happens after the DB commit, not atomically with it (**the outbox pattern is deferred to a future phase**). Phase 4 added bounded retries and failure metrics, but a crash between COMMIT and publish, or retries that are exhausted, still loses that downstream event while the DB row exists; the redelivered message is a duplicate and is not re-published. The delivery is **not** exactly-once and not fully reliable. Details: [kafka.md](kafka.md).
+* `outbox_events` are written in the same transaction as each new reading's prediction/alert. A separate dispatcher leases and publishes them after commit. Delivery is **at-least-once**, not **exactly-once**: a crash after Kafka acknowledgement but before the delivered update can produce a duplicate. Details: [kafka.md](kafka.md) and [operations-runbook.md](operations-runbook.md).
 * `PredictionService` runs inside the open DB transaction (a few ms); acceptable at this scale.
 * The producer does not yet assign `event_id`s; idempotency relies on `(machine_id, timestamp)`.
 * Single-node local Kafka (replication factor 1).
@@ -83,11 +83,12 @@ no new alert is created (the existing one is left unchanged). Resolve it with `P
 copy .env.example .env            # edit POSTGRES_PASSWORD and DATABASE_URL to match
 docker compose up -d
 docker compose ps
-alembic upgrade head                                   # applies 0001 (schema) and 0002 (users)
+alembic upgrade head                                   # applies 0001 (schema), 0002 (users), and 0003 (outbox)
 python -m auth.cli create-user --username alice --role operator   # prompts for the password
 python -m streaming.db_consumer                        # terminal 1
-python -m streaming.producer                           # terminal 2 (see docs/streaming.md for options)
-uvicorn api.main:create_app --factory --port 8000      # terminal 3
+python -m streaming.outbox_dispatcher                  # terminal 2
+python -m streaming.producer                           # terminal 3 (see docs/streaming.md for options)
+uvicorn api.main:create_app --factory --port 8000      # terminal 4
 # http://localhost:8000/docs   (with APP_ENV=production docs are off unless ENABLE_DOCS=true)
 docker compose logs kafka ; docker compose logs postgres
 docker compose down            # add -v to also delete the data volumes

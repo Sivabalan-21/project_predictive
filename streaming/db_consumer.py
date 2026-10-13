@@ -4,7 +4,7 @@
 
 Per message, strictly in this order:
 
-    validate -> DB transaction (reading + prediction + alert) -> COMMIT -> publish downstream -> commit Kafka offset
+    validate -> DB transaction (reading + prediction + alert + outbox intents) -> COMMIT -> commit Kafka offset
 
 * The offset of a message is committed ONLY after it was fully handled: persisted, recognised as a duplicate, or
   safely published to the dead-letter topic. A crash before that makes Kafka redeliver the message; the database makes
@@ -17,9 +17,8 @@ Per message, strictly in this order:
 * Duplicates are skipped (offset committed), no second reading/prediction/alert and no downstream re-publish.
 * Database failures: retried with backoff; if they persist the consumer STOPS without committing the offset
   (exit code 5) so the message is redelivered after restart. It never skips a message it could not persist.
-* Downstream publishing (predictions / alerts topics) happens AFTER the database commit and is NOT atomic with it
-  (no outbox yet): each event is retried a bounded number of times, failures are counted and logged, and a downstream
-  event can still be lost (see docs/kafka.md "Known limitations"). PostgreSQL is the source of truth.
+* The independent ``streaming.outbox_dispatcher`` publishes committed prediction / alert intents.  The consumer never
+  waits for downstream Kafka delivery, so committing its input offset cannot lose a committed downstream intent.
 
 All ML work happens in ml.prediction.PredictionService (called from services.ingestion_service).
 """
@@ -150,17 +149,13 @@ class PersistingSensorConsumer:
             self.metrics.messages.labels(outcome="persisted").inc()
             log.info("persisted machine_id=%s event_id=%s reading_id=%s status=%s risk_score=%.3f", event.machine_id,
                      event.event_id, outcome.sensor_reading_id, outcome.prediction.status, outcome.prediction.risk_score)
-            downstream = [_Downstream("prediction", self.settings.prediction_topic, event.machine_id,
-                                      outcome.prediction.to_json_bytes())]
             if outcome.alert is not None:
                 self.stats.alerts_created += 1
                 self.metrics.alerts_created.inc()
                 log.warning("ALERT created alert_id=%s machine_id=%s fault_type=%s risk_score=%.3f", outcome.alert.alert_id,
                             event.machine_id, outcome.alert.fault_type, outcome.alert.risk_score)
-                downstream.append(_Downstream("alert", self.settings.alert_topic, event.machine_id,
-                                              outcome.alert.to_json_bytes()))
-            self._publish_downstream(downstream, event)
-        self._commit_offset(msg)                                  # <- only now, after the DB COMMIT
+            log.info("outbox intents committed reading_id=%s; dispatcher will publish downstream", outcome.sensor_reading_id)
+        self._commit_offset(msg)                                  # <- only after durable DB transaction (including outbox)
 
     def _ingest_with_retry(self, event: SensorEvent, where: str):
         attempt = 0
@@ -379,7 +374,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     engine = make_engine(db_settings)
     log.info("database %s", db_settings.safe_url())
-    ingestion = IngestionService(make_session_factory(engine), predictor)
+    ingestion = IngestionService(make_session_factory(engine), predictor,
+                                 outbox_topics={"prediction": settings.prediction_topic, "alert": settings.alert_topic})
     metrics = ConsumerMetrics()
     server = MetricsServer(metrics, metrics_addr, metrics_port).start() if metrics_port else None
     try:

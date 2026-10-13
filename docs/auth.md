@@ -58,7 +58,7 @@ alembic downgrade 0001      # rollback: drops only the users table (accounts are
 ## Limitations
 * **Tokens are stateless**: disabling a user or changing a role takes effect when the current token expires (<= 15 minutes). There is no revocation list and no logout.
 * **No refresh tokens**: clients log in again every 15 minutes.
-* **No brute-force protection** (rate limiting / lockout). Argon2 makes guessing slow but not impossible; put a rate limiter on `/api/v1/auth/login` (reverse proxy / WAF).
+* **Login throttle**: each API process limits attempts by direct client IP (`LOGIN_RATE_LIMIT=10` in `LOGIN_RATE_WINDOW_SECONDS=60` by default) and returns 429 after the limit. It deliberately does not use the submitted username. This is process-local; a replicated deployment still needs a reverse proxy/WAF or shared rate limiter.
 * HS256 uses one shared secret: anyone who knows `JWT_SECRET` can mint any token. Keep it in a secret store and rotate by changing it (all tokens become invalid).
 * **TLS is not provided**; terminate HTTPS in front of the API. Tokens and passwords travel in clear text otherwise.
 * `/metrics` is public (it contains no user data); restrict it at the network level.

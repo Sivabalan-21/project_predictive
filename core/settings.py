@@ -63,6 +63,8 @@ class AppSettings:
     enable_docs: bool = True
     jwt_secret: str | None = None
     log_format: str = "text"
+    login_rate_limit: int = 10
+    login_rate_window_seconds: int = 60
 
     def __repr__(self) -> str:            # never print the secret, even by accident (logs, tracebacks, debuggers)
         return (f"AppSettings(env={self.env!r}, enable_docs={self.enable_docs}, "
@@ -103,7 +105,10 @@ class AppSettings:
                 log.warning("JWT_SECRET looks like a placeholder - acceptable for local development only")
 
         _check_database_password(env, production)
-        return cls(env=app_env, enable_docs=enable_docs, jwt_secret=secret, log_format=log_format)
+        login_limit = _positive_int(env, "LOGIN_RATE_LIMIT", 10)
+        login_window = _positive_int(env, "LOGIN_RATE_WINDOW_SECONDS", 60)
+        return cls(env=app_env, enable_docs=enable_docs, jwt_secret=secret, log_format=log_format,
+                   login_rate_limit=login_limit, login_rate_window_seconds=login_window)
 
 
 def _check_database_password(env: Mapping[str, str], production: bool) -> None:
@@ -123,3 +128,13 @@ def _check_database_password(env: Mapping[str, str], production: bool) -> None:
                 raise ConfigurationError(f"the password in {name} looks like a placeholder; set a real secret "
                                          "(refused because APP_ENV=production)")
             log.warning("the password in %s looks like a placeholder - acceptable for local development only", name)
+
+
+def _positive_int(env: Mapping[str, str], name: str, default: int) -> int:
+    try:
+        value = int(env.get(name, str(default)))
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be a positive integer") from exc
+    if value < 1:
+        raise ConfigurationError(f"{name} must be a positive integer")
+    return value

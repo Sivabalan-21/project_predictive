@@ -182,12 +182,12 @@ def test_overclaim_detector_catches_the_phrasings_it_exists_for():
     assert not any(OVERCLAIM.search(_ALLOWED.sub("", l)) for l in good)
 
 
-def test_kafka_doc_states_the_remaining_loss_window_and_that_outbox_is_deferred():
+def test_kafka_doc_states_the_outbox_delivery_model_and_duplicate_window():
     t = (ROOT / "docs/kafka.md").read_text().lower()
-    assert "known limitations" in t and "not exactly-once" in t and "outbox" in t and "deferred" in t
+    assert "known limitations" in t and "not exactly-once" in t and "outbox" in t
     assert "crashes after the commit" in t.replace("\n", " ") or "crash" in t
     arch = (ROOT / "docs/architecture.md").read_text().lower()
-    assert "outbox pattern is deferred" in arch and "not** exactly-once" in arch
+    assert "outbox" in arch and "at-least-once" in arch and "exactly-once" in arch
 
 
 def test_observability_doc_documents_the_single_worker_assumption_and_multiprocess_changes():

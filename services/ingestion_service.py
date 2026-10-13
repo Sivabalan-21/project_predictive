@@ -7,13 +7,14 @@ INSERT ... ON CONFLICT DO NOTHING and produces no second reading, prediction or 
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from db.repositories import AlertRepository, PredictionRepository, SensorReadingRepository
+from db.repositories import AlertRepository, OutboxRepository, PredictionRepository, SensorReadingRepository
 from services.alert_service import AlertPolicy
 from streaming.schemas import AlertEvent, PredictionEvent, SensorEvent
 
@@ -36,11 +37,14 @@ class IngestionService:
     def __init__(self, session_factory: sessionmaker[Session], predictor: Any,
                  readings: SensorReadingRepository | None = None, predictions: PredictionRepository | None = None,
                  alerts: AlertRepository | None = None, policy: AlertPolicy | None = None,
+                 outbox: OutboxRepository | None = None, outbox_topics: dict[str, str] | None = None,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
         self._sf, self._predictor = session_factory, predictor
         self._readings = readings or SensorReadingRepository()
         self._predictions = predictions or PredictionRepository()
         self._alerts = alerts or AlertRepository()
+        self._outbox = outbox or OutboxRepository()
+        self._outbox_topics = outbox_topics or {"prediction": "machine-predictions", "alert": "alerts"}
         self._policy, self._clock = policy or AlertPolicy(), clock
 
     def ingest(self, event: SensorEvent) -> IngestionOutcome:
@@ -80,5 +84,14 @@ class IngestionService:
                     log.info("active alert already exists machine_id=%s fault_type=%s - no new alert", event.machine_id,
                              self._policy.fault_key(result))
             prediction_event = PredictionEvent.from_result(event, result, self._clock(), sensor_reading_id=reading_id)
+            # UUIDv5 makes retries of this transaction refer to the same logical downstream event.  The intent is
+            # committed with the reading/prediction/alert, before any dispatcher can observe it.
+            self._outbox.enqueue(session, event_id=uuid.uuid5(uuid.NAMESPACE_URL, f"prediction:{reading_id}").hex,
+                                event_type="prediction", topic=self._outbox_topics["prediction"], message_key=event.machine_id,
+                                payload=prediction_event.model_dump(mode="json"))
+            if alert_event is not None:
+                self._outbox.enqueue(session, event_id=uuid.uuid5(uuid.NAMESPACE_URL, f"alert:{alert_event.alert_id}").hex,
+                                    event_type="alert", topic=self._outbox_topics["alert"], message_key=event.machine_id,
+                                    payload=alert_event.model_dump(mode="json"))
         # session.begin() committed above; only now may downstream publishing / offset commit happen
         return IngestionOutcome(duplicate=False, sensor_reading_id=reading_id, prediction=prediction_event, alert=alert_event)

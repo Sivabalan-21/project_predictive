@@ -37,6 +37,12 @@ class MeOut(BaseModel):
 def login(body: LoginIn, request: Request, session: Session = Depends(get_session)):
     """Exchange a username and password for a 15-minute bearer token. Public (no token needed)."""
     svc, metrics = AuthService(), getattr(request.app.state, "metrics", None)
+    client_key = request.client.host if request.client else "unknown"
+    if not request.app.state.login_rate_limiter.allow(client_key):
+        if metrics:
+            metrics.login_attempts.labels(result="failure").inc()
+        log.warning("login rate limit exceeded")
+        raise HTTPException(429, "too many login attempts")
     user = svc.authenticate(session, body.username, body.password)
     if user is None:
         if metrics:

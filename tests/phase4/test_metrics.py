@@ -155,25 +155,22 @@ def test_consumer_metrics_cover_every_outcome():
     assert value(s, "consumer_alerts_created_total") == 1.0
     assert value(s, "consumer_offsets_committed_total") == 5.0
     assert value(s, "consumer_message_processing_seconds_count") == 5.0
-    assert value(s, "consumer_downstream_events_total", kind="prediction", result="success") == 2.0
-    assert value(s, "consumer_downstream_events_total", kind="alert", result="success") == 1.0
+    assert value(s, "consumer_downstream_events_total", kind="prediction", result="success") == 0.0
+    assert value(s, "consumer_downstream_events_total", kind="alert", result="success") == 0.0
 
 
-def test_consumer_metrics_for_retries_and_failures():
+def test_consumer_metrics_for_db_and_dlq_retries_without_inline_downstream_retries():
     plan = lambda t, n: "fail" if t in (SETTINGS.prediction_topic, SETTINGS.dlq_topic) and n == 1 else "ok"
     c, *_ = build([kmsg(payload(), 0), kmsg(b"poison", 1)], [op_err(), outcome()], plan=plan)
     c.run(max_messages=2)
     s = parse(exposition(c))
     assert value(s, "consumer_db_retries_total") == 1.0
-    assert value(s, "consumer_downstream_publish_retries_total") == 1.0
+    assert value(s, "consumer_downstream_publish_retries_total") == 0.0
     assert value(s, "consumer_dlq_publish_retries_total") == 1.0
     assert value(s, "consumer_downstream_events_total", kind="prediction", result="failure") == 0.0
 
 
-def test_consumer_metrics_for_exhausted_publish_and_halting():
-    c, *_ = build([kmsg(payload(), 0)], [outcome()], plan=lambda t, n: "fail", publish_retries=1)
-    c.run(max_messages=1)
-    assert value(parse(exposition(c)), "consumer_downstream_events_total", kind="prediction", result="failure") == 1.0
+def test_consumer_metrics_for_dlq_halt():
     h, *_ = build([kmsg(b"poison", 0)], plan=lambda t, n: "fail", dlq_retries=1)
     with pytest.raises(ProcessingHalted):
         h.run(max_messages=1)
