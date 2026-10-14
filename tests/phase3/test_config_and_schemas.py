@@ -46,3 +46,26 @@ def test_alert_event_roundtrip_shape():
                                               "status": "ACTIVE", "timestamp": "2026-10-08T10:30:00.000Z"}
     with pytest.raises(Exception):
         AlertEvent(alert_id=1, machine_id="M001", fault_type="OSF", risk_score=1.5, status="ACTIVE", timestamp=make_event().timestamp)
+
+@pytest.mark.parametrize("value", ["0", "-1", "-5"])
+def test_database_pool_size_must_be_positive(value):
+    with pytest.raises(ConfigurationError, match="DATABASE_POOL_SIZE"):
+        DatabaseSettings.from_env({
+            "DATABASE_URL": "postgresql+psycopg://u:p@localhost:5432/db",
+            "DATABASE_POOL_SIZE": value,
+        })
+
+
+def test_database_pool_size_must_be_an_integer():
+    with pytest.raises(ConfigurationError, match="DATABASE_POOL_SIZE"):
+        DatabaseSettings.from_env({
+            "DATABASE_URL": "postgresql+psycopg://u:p@localhost:5432/db",
+            "DATABASE_POOL_SIZE": "invalid",
+        })
+
+
+def test_database_pool_size_defaults_to_five():
+    settings = DatabaseSettings.from_env({
+        "DATABASE_URL": "postgresql+psycopg://u:p@localhost:5432/db",
+    })
+    assert settings.pool_size == 5

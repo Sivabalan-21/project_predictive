@@ -35,6 +35,8 @@ class DatabaseSettings:
             pool = int(env.get("DATABASE_POOL_SIZE", "5"))
         except ValueError as exc:
             raise ConfigurationError("DATABASE_POOL_SIZE must be an integer") from exc
+        if pool < 1:
+            raise ConfigurationError("DATABASE_POOL_SIZE must be a positive integer")
         return cls(url=url, pool_size=pool, echo=env.get("DATABASE_ECHO", "").lower() in ("1", "true"))
 
     def safe_url(self) -> str:

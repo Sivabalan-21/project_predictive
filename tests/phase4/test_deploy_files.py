@@ -162,8 +162,12 @@ def test_every_docs_reference_points_to_an_existing_file():
 
 
 OVERCLAIM = re.compile(r"(?i)\b(guarantee[sd]?|fully reliable|reliable delivery|lossless|exactly[- ]once delivery|never (loses|lose))\b")
-_ALLOWED = re.compile(r'(?i)"[^"\n]*"|`[^`\n]*`|\b(not|never|no)\s+(fully\s+)?(guarantee[sd]?|reliable)\b|\bno\s+guarantee[sd]?\b')
-
+_ALLOWED = re.compile(
+    r'(?i)"[^"\n]*"|`[^`\n]*`|'
+    r'\b(not|never|no)\s+(fully\s+)?(guarantee[sd]?|reliable)\b|'
+    r'\bno\s+guarantee[sd]?\b|'
+    r'\bnot\s+be\s+treated\s+as\s+guarantees?\b'
+)
 
 @pytest.mark.parametrize("doc", ["docs/kafka.md", "docs/architecture.md", "docs/docker.md", "docs/observability.md", "docs/auth.md", "README.md"])
 def test_docs_do_not_overclaim_delivery_guarantees(doc):

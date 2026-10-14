@@ -34,6 +34,7 @@ x-app-hardening: &app-hardening              # no root, no extra privileges, rea
 services:
   postgres:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-predictive_maintenance}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -56,6 +57,7 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.6.1
+    restart: unless-stopped
     depends_on: [zookeeper]
     ports: ["${KAFKA_BIND_ADDR:-127.0.0.1}:9092:9092"]          # loopback only by default
     environment:
